@@ -1,8 +1,11 @@
 import pafpy
 from Bio import SeqIO
-from Bio import pairwise2
+from Bio import Seq
+from Bio import SeqRecord
 
 SEQ_ID_MIN = 0.85
+LEN_DELTA = 100
+
 
 class Node:
 
@@ -31,8 +34,9 @@ class Node:
         self.ext_scores.append(ext_score)
 
     def remove_overlap(self, node):
-        if node not in self.overlaps: return
-
+        # TODO: CHECK
+        # may take a lot of time, better to throw exception
+        # if node not in self.overlaps: return
         idx = self.overlaps.index(node)
         self.overlaps.pop(idx)
         self.ol_scores.pop(idx)
@@ -44,6 +48,18 @@ class Node:
     def complement_id(self):
         idx = self.id.find('~')
         return '~' + self.id if idx == -1 else self.id[idx + 1:]
+
+    def overlap_score_for_node(self, node):
+        # TODO: CHECK
+        # may take a lot of time, better to throw exception
+        # if node not in self.overlaps: return -1
+        return self.ol_scores[self.overlaps.index(node)]
+
+    def extension_score_for_node(self, node):
+        # TODO: CHECK
+        # may take a lot of time, better to throw exception
+        # if node not in self.overlaps: return -1
+        return self.ext_scores[self.overlaps.index(node)]
 
     @staticmethod
     def complement(id, seq=None):
@@ -251,10 +267,62 @@ class Graph:
         return Graph(contigs, reads)
 
     def generate_paths(self):
+        """
+        TODO: Traverse through graph using depth first search and return list of found
+        paths (list of node lists).
+        """
         pass
 
-    def generate_sequences(self):
-        pass
+    def generate_sequence(self, paths, out_path):
+        # TODO: CHECK
+        # may need to remove duplicate paths
+
+        len_groups = dict()
+
+        for path in paths:
+            path_len = len(path)
+
+            found_group = False
+            for len_group in len_groups:
+                if (path_len >= len_group - LEN_DELTA) and (path_len <= len_group + LEN_DELTA):
+                    len_groups[len_group].append(path)
+                    found_group = True
+
+            if not found_group:
+                len_groups[path_len] = [path]
+
+        biggest_group = max(len_groups.values(), key=len)
+
+        max_ol_score = -1
+        best_path = None
+        for path in biggest_group:
+            ol_score = 0
+            for i in range(len(path) - 1):
+                ol_score += path[i].overlap_score_for_node(path[i + 1])
+
+            if ol_score > max_ol_score:
+                max_ol_score = ol_score
+                best_path = path
+
+        # this is a place where sequences should be loaded if not already
+
+        seq = ''
+        start = 0
+        for i in range(len(best_path) - 1):
+            node = best_path[i]
+            next_node = best_path[i + 1]
+            align = node.alignment_for_node(next_node)
+
+            seq += node.seq[start:align.qstart]
+            start = align.tstart
+
+        seq += best_path[-1].seq[start:]
+
+        record = SeqRecord.SeqRecord(Seq.Seq(seq), id='output_sequence')
+        with open(out_path, 'w') as handle:
+            SeqIO.write([record], handle, 'fasta')
+
+        print('graph.Graph.generate_sequence >> Written generated sequence in the output file.')
 
     @staticmethod
     def __sequence_identity(align):
