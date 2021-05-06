@@ -19,7 +19,7 @@ class Graph:
         Graph.process_overlaps(reads_to_contigs, contigs, reads, Graph.should_add_overlap)
         print('graph.Graph.construct >> Generated overlaps between contigs and reads.')
 
-        Graph.process_overlaps(reads_to_reads, reads, reads, lambda x: True)
+        Graph.process_overlaps(reads_to_reads, reads, reads, lambda *_: True)
         print('graph.Graph.construct >> Generated overlaps between reads.')
 
         return Graph(contigs, reads)
@@ -32,7 +32,7 @@ class Graph:
         pass
 
     def generate_sequence(self, paths, contigs, reads, out):
-        biggest_group = max(Graph.generate_groups(), key=len)
+        biggest_group = max(Graph.generate_groups(paths), key=len)
         best_path = best_path(biggest_group)
 
         Graph.load_sequences(contigs, self.contigs)
@@ -56,7 +56,7 @@ class Graph:
                 if ol.is_unmapped(): continue
                 if Graph.sequence_identity(ol) < SEQ_ID_MIN: continue
 
-                if ol.qname not in qnodes:
+                if ol.qname not in queries:
                     q = Node(ol.qname)
                     queries[q.id] = q
                     compl_q = Node.complement(q)
@@ -120,7 +120,7 @@ class Graph:
                     if t_left > q_right:
                         overlap = Overlap(
                             ol.qstart, ol.qend, ol.qlen,
-                            ol.tlen - ol.end, ol.tlen - ol.tstart, ol.tlen,
+                            ol.tlen - ol.tend, ol.tlen - ol.tstart, ol.tlen,
                             ol.mlen, ol.blen
                         )
                         q.add_overlap(compl_t, overlap)
@@ -159,6 +159,7 @@ class Graph:
                 if (path_len >= len_group - LEN_DELTA) and (path_len <= len_group + LEN_DELTA):
                     len_groups[len_group].append(path)
                     found_group = True
+                    break
 
             if not found_group:
                 len_groups[path_len] = [path]
@@ -187,11 +188,10 @@ class Graph:
         start = 0
         for i in range(len(path) - 1):
             node = path[i]
-            next_node = path[i + 1]
-            align = node.alignment_for_node(next_node)
+            ol = node.overlap_for_node(path[i + 1])
 
-            seq += node.seq[start:align.qstart]
-            start = align.tstart
+            seq += node.seq[start:ol.qstart]
+            start = ol.tstart
 
         seq += path[-1].seq[start:]
 
@@ -202,7 +202,7 @@ class Graph:
         with open(path) as handle:
             for record in SeqIO.parse(handle, 'fasta'):
                 nodes[record.id].seq = record.seq
-                nodes[Node.complement_id(record.id)].seq = Node.complement_sequence(contig.seq)
+                nodes[Node.complement_id(record.id)].seq = Node.complement_sequence(record.seq)
 
     @staticmethod
     def sequence_identity(ol):
@@ -229,10 +229,7 @@ class Graph:
         old_contig = r.nodes[0]
         old_overlap = r.overlaps[0]
 
-        ol_score = Graph.overlap_score(ol)
-        old_ol_score = Graph.overlap_score(old_overlap)
-
-        if old_ol_score > ol_score: return False
+        if Graph.overlap_score(old_overlap) > Graph.overlap_score(ol): return False
 
         r.remove_overlap(old_contig)
 
