@@ -1,6 +1,8 @@
+from typing import List
 import pafpy
 from Bio import SeqIO, Seq, SeqRecord
 from node import Node, Overlap
+import random
 
 SEQ_ID_MIN = 0.85
 LEN_DELTA = 100
@@ -24,12 +26,101 @@ class Graph:
 
         return Graph(contigs, reads)
 
+
+    #klasa koja ce mi pomoc sortirati
+    class helper_sort:
+        score: int
+        node: Node
+        def __init__(self, n:Node, s:int):
+            self.score = s
+            self.node = n
+
+    def dfs(self, current_node: Node, current_path: List, all_found_paths: List, heuristic_depth: int):
+        
+        #dfs dosao do kraj, ili je zbog heuristike ili nea vise djece
+        if heuristic_depth == 0 or len(current_node.nodes):
+            #DEBUG
+            print("grap.generate_paths.dfs >> FOUND ONE PATH :D")
+            all_found_paths.append(current_path)
+            return 
+
+        # dobi sve elemente
+        all_overlap_scores = []
+        all_extension_scores = []
+
+        for node in current_node.nodes:
+            all_overlap_scores.append(self.helper_sort(node, Graph.overlap_score(node.overlaps),reverse=True))
+            all_extension_scores.append(self.helper_sort(node, Graph.extension_score(node.overlaps),reverse=True))
+
+
+        sorted(all_overlap_scores, key=lambda el: el.score)
+        sorted(all_extension_scores, key=lambda el: el.score)
+
+        #Kreiramo next
+        #koliko kojih elemenata ce uzimati za svaki od 3 nacina
+        br_elementa = 20
+        next = []
+        set = set()
+
+        #overlap
+        br_elementa_in_next = 0
+
+        for i in all_overlap_scores:
+            if i in current_path:
+                continue
+            next.append(i.node)
+            set.add(i.node)
+            br_elementa_in_next += 1
+            if br_elementa_in_next == br_elementa:
+                break
+
+        #extention
+        br_elementa_in_next = 0
+
+        for i in all_extension_scores:
+            if i in current_path or i in set: # dal je naputu ili je vec u next
+                continue
+            next.append(i.node)
+            set.add(i.node)
+            br_elementa_in_next += 1
+            if br_elementa_in_next == br_elementa:
+                break
+
+        #monte_carlo
+        br_elementa_in_next = 0
+        len_of_all_elements = len(current_node.nodes)
+        while(len_of_all_elements and br_elementa_in_next < br_elementa):
+            len_of_all_elements -= 1
+            el  = random.choice(current_node.nodes)
+            if el in current_path or el in set:
+                continue
+            next.append(el)
+            set.add(el)
+            br_elementa_in_next += 1
+       
+        set.clear()
+
+        for i in next:
+            current_path.append(i)
+            self.dfs(i, current_path, all_found_paths, heuristic_depth - 1)
+            #backtracking
+            current_path.pop()
+        
+
     def generate_paths(self):
         """
         TODO: Traverse through graph using depth first search and return list of found
         paths (list of node lists).
         """
-        pass
+        all_found_paths = []
+        current_path = []
+        heuristic_depth = 100 # trebamo Toonati :) 
+
+        print("grap.generate_paths >> Finding_Paths")
+        self.dfs(random.choice(self.contigs),current_path,all_found_paths, heuristic_depth)
+
+        return all_found_paths     
+        
 
     def generate_sequence(self, paths, contigs, reads, out):
         biggest_group = max(Graph.generate_groups(paths), key=len)
