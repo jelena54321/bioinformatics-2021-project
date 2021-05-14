@@ -36,9 +36,8 @@ class Graph:
             self.node = n
 
     def dfs(self, current_node: Node, current_path: List, all_found_paths: List, heuristic_depth: int):
-        
         #dfs dosao do kraj, ili je zbog heuristike ili nea vise djece
-        if heuristic_depth == 0 or len(current_node.nodes):
+        if heuristic_depth == 0 or len(current_node.nodes) == 0:
             #DEBUG
             print("grap.generate_paths.dfs >> FOUND ONE PATH :D")
             all_found_paths.append(current_path)
@@ -60,7 +59,7 @@ class Graph:
         #koliko kojih elemenata ce uzimati za svaki od 3 nacina
         br_elementa = 20
         next = []
-        set = set()
+        st = set()
 
         #overlap
         br_elementa_in_next = 0
@@ -69,7 +68,7 @@ class Graph:
             if i in current_path:
                 continue
             next.append(i.node)
-            set.add(i.node)
+            st.add(i.node)
             br_elementa_in_next += 1
             if br_elementa_in_next == br_elementa:
                 break
@@ -78,10 +77,10 @@ class Graph:
         br_elementa_in_next = 0
 
         for i in all_extension_scores:
-            if i in current_path or i in set: # dal je naputu ili je vec u next
+            if i in current_path or i in st: # dal je naputu ili je vec u next
                 continue
             next.append(i.node)
-            set.add(i.node)
+            st.add(i.node)
             br_elementa_in_next += 1
             if br_elementa_in_next == br_elementa:
                 break
@@ -92,13 +91,13 @@ class Graph:
         while(len_of_all_elements and br_elementa_in_next < br_elementa):
             len_of_all_elements -= 1
             el  = random.choice(current_node.nodes)
-            if el in current_path or el in set:
+            if el in current_path or el in st:
                 continue
             next.append(el)
-            set.add(el)
+            st.add(el)
             br_elementa_in_next += 1
        
-        set.clear()
+        st.clear()
 
         for i in next:
             current_path.append(i)
@@ -117,8 +116,9 @@ class Graph:
         heuristic_depth = 100 # trebamo Toonati :) 
 
         print("grap.generate_paths >> Finding_Paths")
-        self.dfs(random.choice(self.contigs),current_path,all_found_paths, heuristic_depth)
 
+        self.dfs(random.choice(list(self.contigs.values())), current_path,all_found_paths, heuristic_depth)
+        print(all_found_paths)
         return all_found_paths     
         
 
