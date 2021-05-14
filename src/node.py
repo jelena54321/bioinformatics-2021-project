@@ -14,6 +14,22 @@ class Overlap:
         self.mlen = mlen
         self.blen = blen
 
+    def q_aligned_len(self):
+        return self.qend - self.qstart
+
+    def t_aligned_len(self):
+        return self.tend - self.tstart
+
+    def left_overhang(self):
+        return ol.tstart
+
+    def right_overhang(self):
+        return ol.qlen - ol.qend
+
+    def extension_len(self):
+        return ol.tlen - ol.tend
+
+
 class Node:
 
     COMPLEMENTS = {'A': 'T', 'C': 'G', 'G': 'C', 'T': 'A'}
@@ -55,7 +71,7 @@ class Node:
     @staticmethod
     def complement_id(id):
         idx = id.find('~')
-        return '~' + id if idx == -1 else id[idx + 1:]
+        return '~' + id if idx == -1 else id[idx+1:]
 
     @staticmethod
     def complement_sequence(seq):

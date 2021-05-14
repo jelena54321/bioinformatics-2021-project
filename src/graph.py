@@ -2,8 +2,10 @@ import pafpy
 from Bio import SeqIO, Seq, SeqRecord
 from node import Node, Overlap
 
+
 SEQ_ID_MIN = 0.85
 LEN_DELTA = 100
+
 
 class Graph:
 
@@ -16,10 +18,20 @@ class Graph:
         contigs = dict()
         reads = dict()
 
-        Graph.process_overlaps(reads_to_contigs, contigs, reads, Graph.should_add_overlap)
-        print('graph.Graph.construct >> Generated overlaps between contigs and reads.')
+        Graph.process_overlaps(
+            reads_to_contigs, contigs, reads,
+            Graph.should_add_overlap
+        )
+        print_str = (
+            'graph.Graph.construct >> '
+            'Generated overlaps between contigs and reads.'
+        )
+        print(print_str)
 
-        Graph.process_overlaps(reads_to_reads, reads, reads, lambda *_: True)
+        Graph.process_overlaps(
+            reads_to_reads, reads, reads,
+            lambda *_: True
+        )
         print('graph.Graph.construct >> Generated overlaps between reads.')
 
         return Graph(contigs, reads)
@@ -46,7 +58,11 @@ class Graph:
         with open(out_path, 'w') as handle:
             SeqIO.write([record], handle, 'fasta')
 
-        print('graph.Graph.generate_sequence >> Written generated sequence in the output file.')
+        print_str = (
+            'graph.Graph.generate_sequence >> '
+            'Written generated sequence in the output file.'
+        )
+        print(print_str)
 
     @staticmethod
     def process_overlaps(path, queries, targets, should_add_overlap):
@@ -83,7 +99,8 @@ class Graph:
                 t_contains_q = q_left <= t_left and q_right <= t_right
                 if q_contains_t or t_contains_q: continue
 
-                if not should_add_overlap(ol, t, compl_t, queries, targets): continue
+                if not should_add_overlap(ol, t, compl_t, queries, targets):
+                    continue
 
                 if ol.strand == pafpy.Strand.Forward:
                     if t_left > q_left:
@@ -156,7 +173,9 @@ class Graph:
 
             found_group = False
             for len_group in len_groups:
-                if (path_len >= len_group - LEN_DELTA) and (path_len <= len_group + LEN_DELTA):
+                if ((path_len >= len_group - LEN_DELTA) and
+                    (path_len <= len_group + LEN_DELTA)):
+
                     len_groups[len_group].append(path)
                     found_group = True
                     break
@@ -173,7 +192,7 @@ class Graph:
         for path in group:
             ol_score = 0
             for i in range(len(path) - 1):
-                ol = path[i].overlap_for_node(path[i + 1])
+                ol = path[i].overlap_for_node(path[i+1])
                 ol_score += Graph.overlap_score(ol)
 
             if ol_score > max_ol_score:
@@ -188,7 +207,7 @@ class Graph:
         start = 0
         for i in range(len(path) - 1):
             node = path[i]
-            ol = node.overlap_for_node(path[i + 1])
+            ol = node.overlap_for_node(path[i+1])
 
             seq += node.seq[start:ol.qstart]
             start = ol.tstart
@@ -202,7 +221,8 @@ class Graph:
         with open(path) as handle:
             for record in SeqIO.parse(handle, 'fasta'):
                 nodes[record.id].seq = record.seq
-                nodes[Node.complement_id(record.id)].seq = Node.complement_sequence(record.seq)
+                compl_seq = Node.complement_sequence(record.seq)
+                nodes[Node.complement_id(record.id)].seq = compl_seq
 
     @staticmethod
     def sequence_identity(ol):
@@ -210,16 +230,16 @@ class Graph:
 
     @staticmethod
     def overlap_score(ol):
-        avg_ol_len = (ol.qend - ol.qstart + ol.tend - ol.tstart) / 2
+        avg_ol_len = (ol.q_aligned_len()+ol.t_aligned_len()) / 2
         return Graph.sequence_identity(ol) * avg_ol_len
 
     @staticmethod
     def extension_score(ol):
         ol_score = Graph.overlap_score(ol)
-        oh_1 = ol.qlen - ol.qend
-        oh_2 = ol.tstart
-        ext_len = ol.tlen - ol.tend
-        return ol_score + ext_len / 2 - (oh_1 + oh_2) / 2
+        oh_1 = ol.right_overhang()
+        oh_2 = ol.left_overhang()
+        ext_len = ol.extension_len()
+        return ol_score + ext_len/2 - (oh_1 + oh_2)/2
 
     @staticmethod
     def should_add_overlap(ol, read, compl_read, contigs, reads):
@@ -229,7 +249,9 @@ class Graph:
         old_contig = r.nodes[0]
         old_overlap = r.overlaps[0]
 
-        if Graph.overlap_score(old_overlap) > Graph.overlap_score(ol): return False
+        old_ol_score = Graph.overlap_score(old_overlap)
+        ol_score = Graph.overlap_score(ol)
+        if old_ol_score > ol_score: return False
 
         r.remove_overlap(old_contig)
 
