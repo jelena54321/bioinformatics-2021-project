@@ -47,13 +47,14 @@ class Graph:
         all_overlap_scores = []
         all_extension_scores = []
 
-        for node in current_node.nodes:
-            all_overlap_scores.append(self.helper_sort(node, Graph.overlap_score(node.overlaps),reverse=True))
-            all_extension_scores.append(self.helper_sort(node, Graph.extension_score(node.overlaps),reverse=True))
+        for i in range(len(current_node.nodes)):
+            all_overlap_scores.append(self.helper_sort(current_node.nodes[i], Graph.overlap_score(current_node.overlaps[i])))
+            all_extension_scores.append(self.helper_sort(current_node.nodes[i], Graph.extension_score(current_node.overlaps[i])))
+            print(Graph.extension_score(current_node.overlaps[i]))
 
 
-        sorted(all_overlap_scores, key=lambda el: el.score)
-        sorted(all_extension_scores, key=lambda el: el.score)
+        sorted(all_overlap_scores, key=lambda el: el.score, reverse=True)
+        sorted(all_extension_scores, key=lambda el: el.score, reverse=True)
 
         #Kreiramo next
         #koliko kojih elemenata ce uzimati za svaki od 3 nacina
@@ -97,8 +98,7 @@ class Graph:
             st.add(el)
             br_elementa_in_next += 1
        
-        st.clear()
-
+        #st.clear()
         for i in next:
             current_path.append(i)
             self.dfs(i, current_path, all_found_paths, heuristic_depth - 1)
@@ -116,9 +116,13 @@ class Graph:
         heuristic_depth = 100 # trebamo Toonati :) 
 
         print("grap.generate_paths >> Finding_Paths")
+        first_node = random.choice(list(self.contigs.values()))
+        while(len(first_node.nodes) == 0):
+             first_node = random.choice(list(self.contigs.values()))
 
-        self.dfs(random.choice(list(self.contigs.values())), current_path,all_found_paths, heuristic_depth)
-        print(all_found_paths)
+        current_path.append(first_node)
+        self.dfs(first_node, current_path, all_found_paths, heuristic_depth)
+        
         return all_found_paths     
         
 
