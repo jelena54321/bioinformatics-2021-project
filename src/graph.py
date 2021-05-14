@@ -35,6 +35,19 @@ class Graph:
             self.score = s
             self.node = n
 
+
+    #stavlja nejbolje elemente na next
+    def get_best_paths(self, l, num_elementa, next, current_path):
+        num_elementa_in_next = 0
+
+        for i in l:
+            if i in current_path or i in next:
+                continue
+            next.append(i.node)
+            num_elementa_in_next += 1
+            if num_elementa_in_next == num_elementa:
+                break
+
     def dfs(self, current_node: Node, current_path: List, all_found_paths: List, heuristic_depth: int):
         #dfs dosao do kraj, ili je zbog heuristike ili nea vise djece
         if heuristic_depth == 0 or len(current_node.nodes) == 0:
@@ -50,55 +63,29 @@ class Graph:
         for i in range(len(current_node.nodes)):
             all_overlap_scores.append(self.helper_sort(current_node.nodes[i], Graph.overlap_score(current_node.overlaps[i])))
             all_extension_scores.append(self.helper_sort(current_node.nodes[i], Graph.extension_score(current_node.overlaps[i])))
-            print(Graph.extension_score(current_node.overlaps[i]))
-
 
         sorted(all_overlap_scores, key=lambda el: el.score, reverse=True)
         sorted(all_extension_scores, key=lambda el: el.score, reverse=True)
 
         #Kreiramo next
         #koliko kojih elemenata ce uzimati za svaki od 3 nacina
-        br_elementa = 20
+        num_element = 20
         next = []
-        st = set()
 
-        #overlap
-        br_elementa_in_next = 0
-
-        for i in all_overlap_scores:
-            if i in current_path:
-                continue
-            next.append(i.node)
-            st.add(i.node)
-            br_elementa_in_next += 1
-            if br_elementa_in_next == br_elementa:
-                break
-
-        #extention
-        br_elementa_in_next = 0
-
-        for i in all_extension_scores:
-            if i in current_path or i in st: # dal je naputu ili je vec u next
-                continue
-            next.append(i.node)
-            st.add(i.node)
-            br_elementa_in_next += 1
-            if br_elementa_in_next == br_elementa:
-                break
+        self.get_best_paths(all_overlap_scores, num_element, next, current_path)
+        self.get_best_paths(all_extension_scores, num_element, next, current_path)
 
         #monte_carlo
-        br_elementa_in_next = 0
+        num_elementa_in_next = 0
         len_of_all_elements = len(current_node.nodes)
-        while(len_of_all_elements and br_elementa_in_next < br_elementa):
+        while(len_of_all_elements and num_elementa_in_next < num_element):
             len_of_all_elements -= 1
             el  = random.choice(current_node.nodes)
-            if el in current_path or el in st:
+            if el in current_path or el in next:
                 continue
             next.append(el)
-            st.add(el)
-            br_elementa_in_next += 1
+            num_elementa_in_next += 1
        
-        #st.clear()
         for i in next:
             current_path.append(i)
             self.dfs(i, current_path, all_found_paths, heuristic_depth - 1)
