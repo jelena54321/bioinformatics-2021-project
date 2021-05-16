@@ -7,14 +7,10 @@ import random
 SEQ_ID_MIN = 0.85
 LEN_DELTA = 100
 
-all_found_paths = []
-current_path = [] # za ovo nisam bas siguran dal bi trebalo biti na poctku fajla
-heuristic_depth = 3
-
-#koliko kojih elemenata ce uzimati za svaki od 3 nacina
-num_element = 20
-
-num_runs = 10
+HERURISTIC_DEPTH = 30
+NUM_ELEMENT = 3
+NUM_RUNS = 10
+NUM_TRAILS = 3
 
 class Graph:
 
@@ -54,7 +50,7 @@ class Graph:
                 continue
             next.append(i.node)
             num_elementa_in_next += 1
-            if num_elementa_in_next == num_element:
+            if num_elementa_in_next == NUM_ELEMENT:
                 break
 
     def monte_carlo(self, all_extension_scores, next, current_path):
@@ -68,18 +64,23 @@ class Graph:
         num_all_len = len(nodes) ## ili neka druga vrijednost
         curent_element = 0
 
-        while num_all_len and num_element > curent_element:
+        while num_all_len:
             nod = random.choices(nodes, weight)
             num_all_len -= 1
-            if nod in next:
+            if nod in current_path:
                 continue
             curent_element += 1
-            next.append()
-            
+            next.append(nod)
+            return 
+
         return 
 
 
-    def dfs(self, current_node: Node, current_path: List, all_found_paths: List, heuristic_depth: int):
+    def dfs(self, current_node: Node, heuristic_depth: int, all_found_paths, current_path, funID):
+        #found new counting
+        if current_node in self.contigs:
+            heuristic_depth = HERURISTIC_DEPTH
+
         #dfs dosao do kraj, ili je zbog heuristike ili nea vise djece
         if heuristic_depth == 0 or len(current_node) == 0:
             all_found_paths.append(current_path)
@@ -97,31 +98,17 @@ class Graph:
         sorted(all_extension_scores, key=lambda el: el.score, reverse=True)
 
         next = []
-
-        self.get_best_paths(all_overlap_scores, next, current_path)
+        
+        if funID == 0:
+            self.get_best_paths(all_overlap_scores, next, current_path)
+        elif funID == 1:
+            self.get_best_paths(all_extension_scores, next, current_path)
+        elif funID == 2:
+            self.monte_carlo(all_extension_scores, next, current_path)
 
         for i in next:
             current_path.append(i)
-            self.dfs(i, current_path, all_found_paths, heuristic_depth - 1)
-            #backtracking
-            current_path.pop()
-
-        siz = len(next)
-        self.get_best_paths(all_extension_scores, next, current_path)
-
-        for i in next[siz:]:
-            current_path.append(i)
-            self.dfs(i, current_path, all_found_paths, heuristic_depth - 1)
-            #backtracking
-            current_path.pop()
-
-        #monte carlo
-        siz = len(next)
-        self.monte_carlo(all_extension_scores, next, current_path)
-       
-        for i in next[siz:]:
-            current_path.append(i)
-            self.dfs(i, current_path, all_found_paths, heuristic_depth - 1)
+            self.dfs(i, heuristic_depth - 1, all_found_paths, current_path)
             #backtracking
             current_path.pop()
         
@@ -131,8 +118,9 @@ class Graph:
         TODO: Traverse through graph using depth first search and return list of found
         paths (list of node lists).
         """
-    
-        for run in range(num_runs):
+        current_path = []
+        all_found_paths = []
+        for run in range(NUM_RUNS):
             print("grap.generate_paths >> Finding_Paths", run)
 
             first_node = random.choice(list(self.contigs.values()))
@@ -142,7 +130,10 @@ class Graph:
             current_path.append(first_node)
             for nod in first_node.nodes:
                 current_path.append(first_node)
-                self.dfs(nod, current_path, all_found_paths, heuristic_depth)
+                self.dfs(nod, HERURISTIC_DEPTH, all_found_paths, current_path)
+                self.dfs(nod, HERURISTIC_DEPTH, all_found_paths, current_path)
+                for i in range(NUM_TRAILS):
+                    self.dfs(nod, HERURISTIC_DEPTH, all_found_paths, current_path)
                 current_path.pop()
 
         return all_found_paths     
