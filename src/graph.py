@@ -1,9 +1,16 @@
+from typing import List
 import pafpy
 from Bio import SeqIO, Seq, SeqRecord
 from node import Node, Overlap
+import random
 
 SEQ_ID_MIN = 0.85
 LEN_DELTA = 100
+
+HERURISTIC_DEPTH = 30
+NUM_ELEMENT = 3
+NUM_RUNS = 10
+NUM_TRAILS = 3
 
 class Graph:
 
@@ -24,12 +31,113 @@ class Graph:
 
         return Graph(contigs, reads)
 
+
+    #klasa koja ce mi pomoc sortirati
+    class helper_sort:
+        score: int
+        node: Node
+        def __init__(self, n:Node, s:int):
+            self.score = s
+            self.node = n
+
+
+    #stavlja nejbolje elemente na next
+    def get_best_paths(self, l, next, current_path):
+        num_elementa_in_next = 0
+
+        for i in l:
+            if i in current_path or i in next:
+                continue
+            next.append(i.node)
+            num_elementa_in_next += 1
+            if num_elementa_in_next == NUM_ELEMENT:
+                break
+
+    def monte_carlo(self, all_extension_scores, next, current_path):
+        
+        nodes = []
+        weight = []
+        for nod in all_extension_scores:
+            nodes.append(nod.node)
+            weight.append(nod.score)
+
+        num_all_len = len(nodes) ## ili neka druga vrijednost
+        curent_element = 0
+
+        while num_all_len:
+            nod = random.choices(nodes, weight)
+            num_all_len -= 1
+            if nod in current_path:
+                continue
+            curent_element += 1
+            next.append(nod)
+            return 
+
+        return 
+
+
+    def dfs(self, current_node: Node, heuristic_depth: int, all_found_paths, current_path, funID):
+        #found new counting
+        if current_node in self.contigs:
+            heuristic_depth = HERURISTIC_DEPTH
+
+        #dfs dosao do kraj, ili je zbog heuristike ili nea vise djece
+        if heuristic_depth == 0 or len(current_node) == 0:
+            all_found_paths.append(current_path)
+            return 
+
+        # dobi sve elemente
+        all_overlap_scores = []
+        all_extension_scores = []
+
+        for i in range(len(current_node)):
+            all_overlap_scores.append(self.helper_sort(current_node.nodes[i], Graph.overlap_score(current_node.overlaps[i])))
+            all_extension_scores.append(self.helper_sort(current_node.nodes[i], Graph.extension_score(current_node.overlaps[i])))
+
+        sorted(all_overlap_scores, key=lambda el: el.score, reverse=True)
+        sorted(all_extension_scores, key=lambda el: el.score, reverse=True)
+
+        next = []
+        
+        if funID == 0:
+            self.get_best_paths(all_overlap_scores, next, current_path)
+        elif funID == 1:
+            self.get_best_paths(all_extension_scores, next, current_path)
+        elif funID == 2:
+            self.monte_carlo(all_extension_scores, next, current_path)
+
+        for i in next:
+            current_path.append(i)
+            self.dfs(i, heuristic_depth - 1, all_found_paths, current_path)
+            #backtracking
+            current_path.pop()
+        
+
     def generate_paths(self):
         """
         TODO: Traverse through graph using depth first search and return list of found
         paths (list of node lists).
         """
-        pass
+        current_path = []
+        all_found_paths = []
+        for run in range(NUM_RUNS):
+            print("grap.generate_paths >> Finding_Paths", run)
+
+            first_node = random.choice(list(self.contigs.values()))
+            while(len(first_node) == 0):
+                first_node = random.choice(list(self.contigs.values()))
+
+            current_path.append(first_node)
+            for nod in first_node.nodes:
+                current_path.append(first_node)
+                self.dfs(nod, HERURISTIC_DEPTH, all_found_paths, current_path)
+                self.dfs(nod, HERURISTIC_DEPTH, all_found_paths, current_path)
+                for i in range(NUM_TRAILS):
+                    self.dfs(nod, HERURISTIC_DEPTH, all_found_paths, current_path)
+                current_path.pop()
+
+        return all_found_paths     
+        
 
     def generate_sequence(self, paths, contigs, reads, out):
         biggest_group = max(Graph.generate_groups(paths), key=len)
