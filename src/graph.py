@@ -230,15 +230,15 @@ class Graph:
 
     @staticmethod
     def overlap_score(ol):
-        avg_ol_len = (ol.q_aligned_len()+ol.t_aligned_len()) / 2
+        avg_ol_len = (ol.qend-ol.qstart+ol.tend-ol.tstart) / 2
         return Graph.sequence_identity(ol) * avg_ol_len
 
     @staticmethod
     def extension_score(ol):
         ol_score = Graph.overlap_score(ol)
-        oh_1 = ol.right_overhang()
-        oh_2 = ol.left_overhang()
-        ext_len = ol.extension_len()
+        oh_1 = ol.qlen - ol.qend
+        oh_2 = ol.tstart
+        ext_len = ol.tlen - ol.tend
         return ol_score + ext_len/2 - (oh_1 + oh_2)/2
 
     @staticmethod

@@ -14,21 +14,6 @@ class Overlap:
         self.mlen = mlen
         self.blen = blen
 
-    def q_aligned_len(self):
-        return self.qend - self.qstart
-
-    def t_aligned_len(self):
-        return self.tend - self.tstart
-
-    def left_overhang(self):
-        return ol.tstart
-
-    def right_overhang(self):
-        return ol.qlen - ol.qend
-
-    def extension_len(self):
-        return ol.tlen - ol.tend
-
 
 class Node:
 
@@ -43,7 +28,7 @@ class Node:
     def __str__(self):
         string = f'{self.id}: {len(self)}'
         for node in self.nodes:
-            string += f'\n\t+{node.id}'
+            string += f'\n\t{node.id}'
 
         return string
 
