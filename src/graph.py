@@ -6,12 +6,21 @@ import random
 
 SEQ_ID_MIN = 0.85
 LEN_DELTA = 100
-HEURISTIC_DEPTH = 30
 NUM_ELEMENT = 3
 NUM_RUNS = 10
 NUM_TRIALS = 3
 
+
+class SortHelper:
+
+    def __init__(self, node, score):
+        self.node = node
+        self.score = score
+
+
 class Graph:
+
+    COMPARATOR_BY_SCORE_AND_LENGTH = lambda el: (el.score, el.node.len)
 
     def __init__(self, contigs, reads):
         self.contigs = contigs
@@ -30,109 +39,28 @@ class Graph:
 
         return Graph(contigs, reads)
 
-
-    #klasa koja ce mi pomoc sortirati
-    class helper_sort:
-        score: int
-        node: Node
-        def __init__(self, n:Node, s:int):
-            self.score = s
-            self.node = n
-
-
-    #stavlja nejbolje elemente na next
-    def get_best_paths(self, l, next, current_path):
-        for i in l:
-            if i.node in current_path:
-                continue
-            next.append(i.node)
-
-            if len(next) == NUM_ELEMENT:
-                break
-
-    def monte_carlo(self, all_extension_scores, next, current_path):
-        nodes = []
-        weight = []
-        for node in all_extension_scores:
-            if node in current_path: continue
-
-            nodes.append(node.node)
-            weight.append(node.score)
-
-        if len(nodes) == 0: return
-
-        node = random.choices(nodes, weight)[0]
-        next.append(node)
-
-        return
-
-    def dfs(self, current_node: Node, heuristic_depth: int, all_found_paths, current_path, funID):
-        #found new counting
-        if current_node in self.contigs:
-            heuristic_depth = HEURISTIC_DEPTH
-
-        #dfs dosao do kraj, ili je zbog heuristike ili nea vise djece
-        if heuristic_depth == 0 or len(current_node.nodes) == 0:
-            all_found_paths.append(current_path)
-            return
-
-        # dobi sve elemente
-        all_overlap_scores = []
-        all_extension_scores = []
-        for i in range(len(current_node.nodes)):
-            next_node = current_node.nodes[i]
-            ol = current_node.overlaps[i]
-
-            ol_score = Graph.overlap_score(ol)
-            all_overlap_scores.append(helper_sort(next_node, ol_score))
-
-            ext_score = Graph.extension_score(ol, current_node, next_node)
-            all_extension_scores.append(helper_sort(next_node, ext_score))
-
-        all_overlap_scores = sorted(all_overlap_scores, key=lambda el: el.score, reverse=True)
-        all_extension_scores = sorted(all_extension_scores, key=lambda el: el.score, reverse=True)
-
-        next = []
-
-        if funID == 0:
-            self.get_best_paths(all_overlap_scores, next, current_path)
-        elif funID == 1:
-            self.get_best_paths(all_extension_scores, next, current_path)
-        elif funID == 2:
-            self.monte_carlo(all_extension_scores, next, current_path)
-
-        for i in next:
-            current_path.append(i)
-            self.dfs(i, heuristic_depth - 1, all_found_paths, current_path, funID)
-            #backtracking
-            current_path.pop()
-
-
     def generate_paths(self):
-        """
-        TODO: Traverse through graph using depth first search and return list of found
-        paths (list of node lists).
-        """
-        current_path = []
-        all_found_paths = []
+        all_paths = []
         for run in range(NUM_RUNS):
             print(f'graph.Graph.generate_paths >> Finding Paths: {run + 1}')
 
-            first_node = random.choice(list(self.contigs.values()))
+            contigs = list(self.contigs.values())
+            first_node = random.choice(contigs)
             while(len(first_node.nodes) == 0):
-                first_node = random.choice(list(self.contigs.values()))
+                first_node = random.choice(contigs)
 
-            current_path.append(first_node)
             for node in first_node.nodes:
-                current_path.append(node)
-                self.dfs(node, HEURISTIC_DEPTH, all_found_paths, current_path, 0)
-                self.dfs(node, HEURISTIC_DEPTH, all_found_paths, current_path, 1)
+                paths = self.dfs(node, [first_node], 0)
+                all_paths.extend(paths)
+
+                paths = self.dfs(node, [first_node], 1)
+                all_paths.extend(paths)
+
                 for i in range(NUM_TRIALS):
-                    self.dfs(node, HEURISTIC_DEPTH, all_found_paths, current_path, 2)
-                current_path.pop()
+                    paths = self.dfs(first_node, [], 2)
+                    all_paths.extend(paths)
 
-        return all_found_paths
-
+        return all_paths
 
     def generate_sequence(self, paths, contigs, reads, out):
         biggest_group = max(Graph.generate_groups(paths), key=len)
@@ -250,6 +178,128 @@ class Graph:
                             seq_id
                         )
                         compl_q.add_overlap(t, overlap)
+
+    def dfs(self, start_node, start_path, funID):
+        paths = []
+
+        open_nodes = [[start_node]]
+        open_paths = [copy.copy(start_path)]
+        start_path_len = 0 if len(start_path) == 0 else start_path[0].len
+        open_path_lens = [start_path_len]
+
+        contigs = set(self.contigs.values())
+
+        while len(open_nodes) != 0:
+
+            node = open_nodes[0].pop(0)
+            active_path = open_paths[0]
+
+            if len(active_path) == 0:
+                ext_len = node.len
+            else:
+                ol = active_path[-1].overlap_for_node(node)
+                ext_len = node.len - ol.tend
+
+            path_len = open_path_lens[0] + ext_len
+
+            if len(open_nodes[0]) == 0:
+                open_nodes.pop(0)
+                open_paths.pop(0)
+                open_path_lens.pop(0)
+
+            if node in active_path: continue
+            if len(node.nodes) == 0 or path_len > MAX_SEQ_LEN: continue
+
+            is_read = node not in contigs
+            connected_contig = set(node.nodes).intersection(contigs)
+            if is_read and len(connected_contig) != 0:
+
+                path = copy.copy(active_path)
+                path.append(node)
+                path.append(connected_contig.pop())
+                paths.append(path)
+
+                open_nodes.clear()
+                open_paths.clear()
+                open_path_lens.clear()
+                break
+
+            ol_scores = []
+            ext_scores = []
+            for i in range(len(node.nodes)):
+                next_node = node.nodes[i]
+                ol = node.overlaps[i]
+
+                ol_score = Graph.overlap_score(ol)
+                ol_scores.append(SortHelper(next_node, ol_score))
+
+                ext_score = Graph.extension_score(ol, node, next_node)
+                ext_scores.append(SortHelper(next_node, ext_score))
+
+            ol_scores = sorted(
+                ol_scores,
+                key=Graph.COMPARATOR_BY_SCORE_AND_LENGTH,
+                reverse=True
+            )
+            ext_scores = sorted(
+                ext_scores,
+                key=Graph.COMPARATOR_BY_SCORE_AND_LENGTH,
+                reverse=True
+            )
+
+            if funID == 0:
+                next_nodes = Graph.next_nodes(ol_scores, active_path)
+            elif funID == 1:
+                next_nodes = Graph.next_nodes(ext_scores, active_path)
+            elif funID == 2:
+                next_nodes = Graph.next_nodes_using_monte_carlo(ext_scores, active_path)
+
+            if len(next_nodes) == 0: continue
+
+            path = copy.copy(active_path)
+            path.append(node)
+
+            open_nodes.insert(0, next_nodes)
+            open_paths.insert(0, path)
+            open_path_lens.insert(0, path_len)
+
+        return paths
+
+    @staticmethod
+    def next_nodes(scores, path):
+        next = []
+        """
+        for score in scores:
+            node = score.node
+            if node in path: continue
+
+            next.append(node)
+            if len(next) == NUM_ELEMENTS: break
+        """
+        for i in range(NUM_ELEMENTS):
+            node = scores[i].node
+            if node in path: continue
+            next.append(node)
+
+        return next
+
+    @staticmethod
+    def next_nodes_using_monte_carlo(extension_scores, path):
+        next = []
+
+        nodes = []
+        weights = []
+        for node in extension_scores:
+            if node in path: continue
+            nodes.append(node.node)
+            weights.append(node.score)
+
+        if len(nodes) == 0: return next
+
+        node = random.choices(nodes, weights)
+        next.append(node[0])
+
+        return next
 
     @staticmethod
     def generate_groups(paths):
