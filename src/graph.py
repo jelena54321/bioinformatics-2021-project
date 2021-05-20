@@ -6,11 +6,10 @@ import random
 
 SEQ_ID_MIN = 0.85
 LEN_DELTA = 100
-
-HERURISTIC_DEPTH = 30
+HEURISTIC_DEPTH = 30
 NUM_ELEMENT = 3
 NUM_RUNS = 10
-NUM_TRAILS = 3
+NUM_TRIALS = 3
 
 class Graph:
 
@@ -43,48 +42,39 @@ class Graph:
 
     #stavlja nejbolje elemente na next
     def get_best_paths(self, l, next, current_path):
-        num_elementa_in_next = 0
-
         for i in l:
-            if i in current_path or i in next:
+            if i.node in current_path:
                 continue
             next.append(i.node)
-            num_elementa_in_next += 1
-            if num_elementa_in_next == NUM_ELEMENT:
+
+            if len(next) == NUM_ELEMENT:
                 break
 
     def monte_carlo(self, all_extension_scores, next, current_path):
-        
         nodes = []
         weight = []
-        for nod in all_extension_scores:
-            nodes.append(nod.node)
-            weight.append(nod.score)
+        for node in all_extension_scores:
+            if node in current_path: continue
 
-        num_all_len = len(nodes) ## ili neka druga vrijednost
-        curent_element = 0
+            nodes.append(node.node)
+            weight.append(node.score)
 
-        while num_all_len:
-            nod = random.choices(nodes, weight)
-            num_all_len -= 1
-            if nod in current_path:
-                continue
-            curent_element += 1
-            next.append(nod)
-            return 
+        if len(nodes) == 0: return
 
-        return 
+        node = random.choices(nodes, weight)[0]
+        next.append(node)
 
+        return
 
     def dfs(self, current_node: Node, heuristic_depth: int, all_found_paths, current_path, funID):
         #found new counting
         if current_node in self.contigs:
-            heuristic_depth = HERURISTIC_DEPTH
+            heuristic_depth = HEURISTIC_DEPTH
 
         #dfs dosao do kraj, ili je zbog heuristike ili nea vise djece
         if heuristic_depth == 0 or len(current_node) == 0:
             all_found_paths.append(current_path)
-            return 
+            return
 
         # dobi sve elemente
         all_overlap_scores = []
@@ -94,11 +84,11 @@ class Graph:
             all_overlap_scores.append(self.helper_sort(current_node.nodes[i], Graph.overlap_score(current_node.overlaps[i])))
             all_extension_scores.append(self.helper_sort(current_node.nodes[i], Graph.extension_score(current_node.overlaps[i])))
 
-        sorted(all_overlap_scores, key=lambda el: el.score, reverse=True)
-        sorted(all_extension_scores, key=lambda el: el.score, reverse=True)
+        all_overlap_scores = sorted(all_overlap_scores, key=lambda el: el.score, reverse=True)
+        all_extension_scores = sorted(all_extension_scores, key=lambda el: el.score, reverse=True)
 
         next = []
-        
+
         if funID == 0:
             self.get_best_paths(all_overlap_scores, next, current_path)
         elif funID == 1:
@@ -108,10 +98,10 @@ class Graph:
 
         for i in next:
             current_path.append(i)
-            self.dfs(i, heuristic_depth - 1, all_found_paths, current_path)
+            self.dfs(i, heuristic_depth - 1, all_found_paths, current_path, funID)
             #backtracking
             current_path.pop()
-        
+
 
     def generate_paths(self):
         """
@@ -121,23 +111,23 @@ class Graph:
         current_path = []
         all_found_paths = []
         for run in range(NUM_RUNS):
-            print("grap.generate_paths >> Finding_Paths", run)
+            print(f'graph.Graph.generate_paths >> Finding Paths: {run + 1}')
 
             first_node = random.choice(list(self.contigs.values()))
             while(len(first_node) == 0):
                 first_node = random.choice(list(self.contigs.values()))
 
             current_path.append(first_node)
-            for nod in first_node.nodes:
-                current_path.append(first_node)
-                self.dfs(nod, HERURISTIC_DEPTH, all_found_paths, current_path)
-                self.dfs(nod, HERURISTIC_DEPTH, all_found_paths, current_path)
-                for i in range(NUM_TRAILS):
-                    self.dfs(nod, HERURISTIC_DEPTH, all_found_paths, current_path)
+            for node in first_node.nodes:
+                current_path.append(node)
+                self.dfs(node, HEURISTIC_DEPTH, all_found_paths, current_path, 0)
+                self.dfs(node, HEURISTIC_DEPTH, all_found_paths, current_path, 1)
+                for i in range(NUM_TRIALS):
+                    self.dfs(node, HEURISTIC_DEPTH, all_found_paths, current_path, 2)
                 current_path.pop()
 
-        return all_found_paths     
-        
+        return all_found_paths
+
 
     def generate_sequence(self, paths, contigs, reads, out):
         biggest_group = max(Graph.generate_groups(paths), key=len)
@@ -218,7 +208,7 @@ class Graph:
                         q.add_overlap(t, overlap)
 
                         overlap = Overlap(
-                            ol.tlen - ol.tend, ol.tlen - ol.qstart, ol.tlen,
+                            ol.tlen - ol.tend, ol.tlen - ol.tstart, ol.tlen,
                             ol.qlen - ol.qend, ol.qlen - ol.qstart, ol.qlen,
                             ol.mlen, ol.blen
                         )
