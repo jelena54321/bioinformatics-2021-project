@@ -72,17 +72,22 @@ class Graph:
             heuristic_depth = HEURISTIC_DEPTH
 
         #dfs dosao do kraj, ili je zbog heuristike ili nea vise djece
-        if heuristic_depth == 0 or len(current_node) == 0:
+        if heuristic_depth == 0 or len(current_node.nodes) == 0:
             all_found_paths.append(current_path)
             return
 
         # dobi sve elemente
         all_overlap_scores = []
         all_extension_scores = []
+        for i in range(len(current_node.nodes)):
+            next_node = current_node.nodes[i]
+            ol = current_node.overlaps[i]
 
-        for i in range(len(current_node)):
-            all_overlap_scores.append(self.helper_sort(current_node.nodes[i], Graph.overlap_score(current_node.overlaps[i])))
-            all_extension_scores.append(self.helper_sort(current_node.nodes[i], Graph.extension_score(current_node.overlaps[i])))
+            ol_score = Graph.overlap_score(ol)
+            all_overlap_scores.append(helper_sort(next_node, ol_score))
+
+            ext_score = Graph.extension_score(ol, current_node, next_node)
+            all_extension_scores.append(helper_sort(next_node, ext_score))
 
         all_overlap_scores = sorted(all_overlap_scores, key=lambda el: el.score, reverse=True)
         all_extension_scores = sorted(all_extension_scores, key=lambda el: el.score, reverse=True)
@@ -114,7 +119,7 @@ class Graph:
             print(f'graph.Graph.generate_paths >> Finding Paths: {run + 1}')
 
             first_node = random.choice(list(self.contigs.values()))
-            while(len(first_node) == 0):
+            while(len(first_node.nodes) == 0):
                 first_node = random.choice(list(self.contigs.values()))
 
             current_path.append(first_node)
@@ -183,65 +188,66 @@ class Graph:
 
                 if not should_add_overlap(ol, t, compl_t, queries, targets): continue
 
+                seq_id = Graph.sequence_identity(ol)
                 if ol.strand == pafpy.Strand.Forward:
                     if t_left > q_left:
                         overlap = Overlap(
-                            ol.tstart, ol.tend, ol.tlen,
-                            ol.qstart, ol.qend, ol.qlen,
-                            ol.mlen, ol.blen
+                            ol.tstart, ol.tend,
+                            ol.qstart, ol.qend,
+                            seq_id
                         )
                         t.add_overlap(q, overlap)
 
                         overlap = Overlap(
-                            ol.qlen - ol.qend, ol.qlen - ol.qstart, ol.qlen,
-                            ol.tlen - ol.tend, ol.tlen - ol.tstart, ol.tlen,
-                            ol.mlen, ol.blen
+                            ol.qlen - ol.qend, ol.qlen - ol.qstart,
+                            ol.tlen - ol.tend, ol.tlen - ol.tstart,
+                            seq_id
                         )
                         compl_q.add_overlap(compl_t, overlap)
 
                     else:
                         overlap = Overlap(
-                            ol.qstart, ol.qend, ol.qlen,
-                            ol.tstart, ol.tend, ol.tlen,
-                            ol.mlen, ol.blen
+                            ol.qstart, ol.qend,
+                            ol.tstart, ol.tend,
+                            seq_id
                         )
                         q.add_overlap(t, overlap)
 
                         overlap = Overlap(
-                            ol.tlen - ol.tend, ol.tlen - ol.tstart, ol.tlen,
-                            ol.qlen - ol.qend, ol.qlen - ol.qstart, ol.qlen,
-                            ol.mlen, ol.blen
+                            ol.tlen - ol.tend, ol.tlen - ol.tstart,
+                            ol.qlen - ol.qend, ol.qlen - ol.qstart,
+                            seq_id
                         )
                         compl_t.add_overlap(compl_q, overlap)
 
                 else:
                     if t_left > q_right:
                         overlap = Overlap(
-                            ol.qstart, ol.qend, ol.qlen,
-                            ol.tlen - ol.tend, ol.tlen - ol.tstart, ol.tlen,
-                            ol.mlen, ol.blen
+                            ol.qstart, ol.qend,
+                            ol.tlen - ol.tend, ol.tlen - ol.tstart,
+                            seq_id
                         )
                         q.add_overlap(compl_t, overlap)
 
                         overlap = Overlap(
-                            ol.tstart, ol.tend, ol.tlen,
-                            ol.qlen - ol.qend, ol.qlen - ol.qstart, ol.qlen,
-                            ol.mlen, ol.blen
+                            ol.tstart, ol.tend,
+                            ol.qlen - ol.qend, ol.qlen - ol.qstart,
+                            seq_id
                         )
                         t.add_overlap(compl_q, overlap)
 
                     else:
                         overlap = Overlap(
-                            ol.tlen - ol.tend, ol.tlen - ol.tstart, ol.tlen,
-                            ol.qstart, ol.qend, ol.qlen,
-                            ol.mlen, ol.blen
+                            ol.tlen - ol.tend, ol.tlen - ol.tstart,
+                            ol.qstart, ol.qend,
+                            seq_id
                         )
                         compl_t.add_overlap(q, overlap)
 
                         overlap = Overlap(
-                            ol.qlen - ol.qend, ol.qlen - ol.qstart, ol.qlen,
-                            ol.tstart, ol.tend, ol.tlen,
-                            ol.mlen, ol.blen
+                            ol.qlen - ol.qend, ol.qlen - ol.qstart,
+                            ol.tstart, ol.tend,
+                            seq_id
                         )
                         compl_q.add_overlap(t, overlap)
 
@@ -303,27 +309,34 @@ class Graph:
                 nodes[Node.complement_id(record.id)].seq = Node.complement_sequence(record.seq)
 
     @staticmethod
-    def sequence_identity(ol):
+    def sequence_identity(ol: pafpy.PafRecord):
         return ol.mlen / ol.blen
 
     @staticmethod
-    def overlap_score(ol):
-        avg_ol_len = (ol.qend - ol.qstart + ol.tend - ol.tstart) / 2
-        return Graph.sequence_identity(ol) * avg_ol_len
+    def average_overlap_length(ol):
+        return (ol.qend - ol.qstart + ol.tend - ol.tstart) / 2
 
     @staticmethod
-    def extension_score(ol):
+    def overlap_score(ol):
+        if isinstance(ol, pafpy.PafRecord):
+            seq_id = Graph.sequence_identity(ol)
+        else:
+            seq_id = ol.seq_id
+        return seq_id * Graph.average_overlap_length(ol)
+
+    @staticmethod
+    def extension_score(ol: Overlap, q, t):
         ol_score = Graph.overlap_score(ol)
-        oh_1 = ol.qlen - ol.qend
+        oh_1 = len(q) - ol.qend
         oh_2 = ol.tstart
-        ext_len = ol.tlen - ol.tend
+        ext_len = len(t) - ol.tend
         return ol_score + ext_len / 2 - (oh_1 + oh_2) / 2
 
     @staticmethod
     def should_add_overlap(ol, read, compl_read, contigs, reads):
-        if len(read) == 0 and len(compl_read) == 0: return True
+        if len(read.nodes) == 0 and len(compl_read.nodes) == 0: return True
 
-        r = read if len(read) > 0 else compl_read
+        r = read if len(read.nodes) > 0 else compl_read
         old_contig = r.nodes[0]
         old_overlap = r.overlaps[0]
 
