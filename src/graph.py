@@ -6,11 +6,12 @@ import copy
 
 
 SEQ_ID_MIN = 0.9
-LEN_DELTA = 100
+LEN_DELTA = 1000
 NUM_ELEMENTS = 2
 NUM_RUNS = 1
-DELTA_TRIALS = 100
+DELTA_TRIALS = 10
 MAX_SEQ_LEN = 2_000_000
+MIN_LEN = 10_000
 
 
 class SortHelper:
@@ -43,6 +44,7 @@ class Graph:
 
     def generate_paths(self):
         all_paths = []
+        all_path_lens = []
         for run in range(NUM_RUNS):
             print_str = (
                 'graph.Graph.generate_paths >> '
@@ -56,22 +58,26 @@ class Graph:
                 first_node = random.choice(contigs)
 
             for node in first_node.nodes:
-                paths = self.dfs(node, [first_node], 0)
+                paths, path_lens = self.dfs(node, [first_node], 0)
                 all_paths.extend(paths)
+                all_path_lens.extend(path_lens)
 
-                paths = self.dfs(node, [first_node], 1)
+                paths, path_lens = self.dfs(node, [first_node], 1)
                 all_paths.extend(paths)
+                all_path_lens.extend(path_lens)
 
             n_next_nodes = len(first_node.nodes)
             for i in range(n_next_nodes + DELTA_TRIALS):
-                paths = self.dfs(first_node, [], 2)
+                paths, path_lens = self.dfs(first_node, [], 2)
                 all_paths.extend(paths)
+                all_path_lens.extend(path_lens)
 
-        return all_paths
+        print(f'graph.Graph.generate_paths >> Found {len(all_paths)} paths.')
+        return all_paths, all_path_lens
 
-    def generate_sequence(self, paths, contigs, reads, out):
-        biggest_group = max(Graph.generate_groups(paths), key=len)
-        best_path = best_path(biggest_group)
+    def generate_sequence(self, paths, path_lens, contigs, reads, out):
+        biggest_group = max(Graph.generate_groups(paths, path_lens), key=len)
+        best_path = Graph.best_path(biggest_group)
 
         Graph.load_sequences(contigs, self.contigs)
         print('graph.Graph.generate_sequence >> Loaded contigs.')
@@ -80,8 +86,8 @@ class Graph:
         print('graph.Graph.generate_sequence >> Loaded reads.')
 
         seq = Graph.build_sequence(best_path)
-        record = SeqRecord.SeqRecord(Seq.Seq(seq), id='output_sequence')
-        with open(out_path, 'w') as handle:
+        record = SeqRecord.SeqRecord(seq, id='output_sequence')
+        with open(out, 'w') as handle:
             SeqIO.write([record], handle, 'fasta')
 
         print('graph.Graph.generate_sequence >> Written generated sequence in the output file.')
@@ -188,6 +194,7 @@ class Graph:
 
     def dfs(self, start_node, start_path, funID):
         paths = []
+        path_lens = []
 
         open_nodes = [[start_node]]
         open_paths = [copy.copy(start_path)]
@@ -220,11 +227,16 @@ class Graph:
             is_read = node not in contigs
             connected_contig = set(node.nodes).intersection(contigs)
             if is_read and len(connected_contig) != 0:
+                contig = connected_contig.pop()
 
                 path = copy.copy(active_path)
                 path.append(node)
-                path.append(connected_contig.pop())
+                path.append(contig)
                 paths.append(path)
+
+                ol = node.overlap_for_node(contig)
+                ext_len = contig.len - ol.tend
+                path_lens.append(path_len + ext_len)
 
                 open_nodes.clear()
                 open_paths.clear()
@@ -270,7 +282,7 @@ class Graph:
             open_paths.insert(0, path)
             open_path_lens.insert(0, path_len)
 
-        return paths
+        return paths, path_lens
 
     @staticmethod
     def next_nodes(scores, path):
@@ -308,11 +320,15 @@ class Graph:
         return next
 
     @staticmethod
-    def generate_groups(paths):
+    def generate_groups(paths, path_lens):
+        if all(path_len < MIN_LEN for path_len in path_lens):
+            return [paths]
+
         len_groups = dict()
 
-        for path in paths:
-            path_len = len(path)
+        for i in range(len(paths)):
+            path = paths[i]
+            path_len = path_lens[i]
 
             found_group = False
             for len_group in len_groups:
@@ -324,7 +340,7 @@ class Graph:
             if not found_group:
                 len_groups[path_len] = [path]
 
-        return len_groups.values()
+        return list(len_groups.values())
 
     @staticmethod
     def best_path(group):
