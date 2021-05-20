@@ -11,21 +11,12 @@ class Overlap:
 
 class Node:
 
-    COMPLEMENTS = {'A': 'T', 'C': 'G', 'G': 'C', 'T': 'A'}
-
     def __init__(self, id, len):
         self.id = id
         self.len = len
         self.seq = None
         self.nodes = []
         self.overlaps = []
-
-    def __str__(self):
-        string = f'{self.id}: {len(self.nodes)}'
-        for node in self.nodes:
-            string += f'\n\t{node.id}'
-
-        return string
 
     def __len__(self):
         return self.len
@@ -49,16 +40,7 @@ class Node:
 
     @staticmethod
     def complement_sequence(seq):
-        if seq is None: return None
-
-        complemented_seq = []
-        for base in seq:
-            if base not in Node.COMPLEMENTS: complement = base
-            else: complement = Node.COMPLEMENTS[base]
-
-            complemented_seq.append(complement)
-
-        return (''.join(complemented_seq))[::-1]
+        return None if seq is None else seq.reverse_complement()
 
     @staticmethod
     def complement(node):
