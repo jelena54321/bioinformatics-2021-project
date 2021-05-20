@@ -79,10 +79,12 @@ class Graph:
         biggest_group = max(Graph.generate_groups(paths, path_lens), key=len)
         best_path = Graph.best_path(biggest_group)
 
-        Graph.load_sequences(contigs, self.contigs)
+        used_nodes = list(map(lambda node: node.id, best_path))
+
+        Graph.load_sequences(contigs, self.contigs, used_nodes)
         print('graph.Graph.generate_sequence >> Loaded contigs.')
 
-        Graph.load_sequences(reads, self.reads)
+        Graph.load_sequences(reads, self.reads, used_nodes)
         print('graph.Graph.generate_sequence >> Loaded reads.')
 
         seq = Graph.build_sequence(best_path)
@@ -370,15 +372,19 @@ class Graph:
             start = ol.tstart
 
         seq += path[-1].seq[start:]
-
         return seq
 
     @staticmethod
-    def load_sequences(path, nodes):
+    def load_sequences(path, nodes, used_nodes):
         with open(path) as handle:
             for record in SeqIO.parse(handle, 'fasta'):
-                nodes[record.id].seq = record.seq
-                nodes[Node.complement_id(record.id)].seq = Node.complement_sequence(record.seq)
+                if record.id in used_nodes:
+                    nodes[record.id].seq = record.seq
+                    return
+
+                compl_id = Node.complement_id(record.id)
+                if compl_id in used_nodes:
+                    nodes[compl_id].seq = Node.complement_sequence(record.seq)
 
     @staticmethod
     def sequence_identity(ol: pafpy.PafRecord):
