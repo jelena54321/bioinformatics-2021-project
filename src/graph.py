@@ -1,14 +1,16 @@
-from typing import List
-import pafpy
 from Bio import SeqIO, Seq, SeqRecord
 from node import Node, Overlap
+import pafpy
 import random
+import copy
 
-SEQ_ID_MIN = 0.85
+
+SEQ_ID_MIN = 0.9
 LEN_DELTA = 100
-NUM_ELEMENT = 3
-NUM_RUNS = 10
-NUM_TRIALS = 3
+NUM_ELEMENTS = 2
+NUM_RUNS = 1
+DELTA_TRIALS = 100
+MAX_SEQ_LEN = 2_000_000
 
 
 class SortHelper:
@@ -42,11 +44,15 @@ class Graph:
     def generate_paths(self):
         all_paths = []
         for run in range(NUM_RUNS):
-            print(f'graph.Graph.generate_paths >> Finding Paths: {run + 1}')
+            print_str = (
+                'graph.Graph.generate_paths >> '
+                f'Finding Paths - run: {run + 1}/{NUM_RUNS}'
+            )
+            print(print_str)
 
             contigs = list(self.contigs.values())
             first_node = random.choice(contigs)
-            while(len(first_node.nodes) == 0):
+            while len(first_node.nodes) == 0:
                 first_node = random.choice(contigs)
 
             for node in first_node.nodes:
@@ -56,9 +62,10 @@ class Graph:
                 paths = self.dfs(node, [first_node], 1)
                 all_paths.extend(paths)
 
-                for i in range(NUM_TRIALS):
-                    paths = self.dfs(first_node, [], 2)
-                    all_paths.extend(paths)
+            n_next_nodes = len(first_node.nodes)
+            for i in range(n_next_nodes + DELTA_TRIALS):
+                paths = self.dfs(first_node, [], 2)
+                all_paths.extend(paths)
 
         return all_paths
 
@@ -88,7 +95,7 @@ class Graph:
                 if Graph.sequence_identity(ol) < SEQ_ID_MIN: continue
 
                 if ol.qname not in queries:
-                    q = Node(ol.qname)
+                    q = Node(ol.qname, ol.qlen)
                     queries[q.id] = q
                     compl_q = Node.complement(q)
                     queries[compl_q.id] = compl_q
@@ -97,7 +104,7 @@ class Graph:
                     compl_q = queries[Node.complement_id(q.id)]
 
                 if ol.tname not in targets:
-                    t = Node(ol.tname)
+                    t = Node(ol.tname, ol.tlen)
                     targets[t.id] = t
                     compl_t = Node.complement(t)
                     targets[compl_t.id] = compl_t
@@ -298,7 +305,6 @@ class Graph:
 
         node = random.choices(nodes, weights)
         next.append(node[0])
-
         return next
 
     @staticmethod
