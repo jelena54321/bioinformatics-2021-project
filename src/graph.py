@@ -9,7 +9,7 @@ SEQ_ID_MIN = 0.9
 LEN_DELTA = 1000
 NUM_ELEMENTS = 3
 NUM_RUNS = 1
-DELTA_TRIALS = 10
+DELTA_TRIALS = 100
 MAX_SEQ_LEN = 2_000_000
 MIN_LEN = 10_000
 
@@ -92,7 +92,7 @@ class Graph:
         biggest_group = max(Graph.generate_groups(paths, path_lens), key=len)
         best_path = Graph.best_path(biggest_group)
 
-        used_nodes = list(map(lambda node: node.id, best_path))
+        used_nodes = set(map(lambda node: node.id, best_path))
 
         Graph.load_sequences(contigs, self.contigs, used_nodes)
         print('graph.Graph.generate_sequence >> Loaded contigs.')
@@ -221,6 +221,7 @@ class Graph:
         open_path_lens = [start_path_len]
 
         contigs = set(self.contigs.values())
+        visited = set()
 
         while len(open_nodes) != 0:
 
@@ -240,12 +241,15 @@ class Graph:
                 open_paths.pop(0)
                 open_path_lens.pop(0)
 
+            if node in visited:
+                continue
+            else:
+                visited.add(node)
+
             node_compl = self.get_node_complement(node)
             if node in active_path or node_compl in active_path: continue
 
-            if len(node.nodes) == 0: continue
-
-            if path_len > MAX_SEQ_LEN: continue
+            if len(node.nodes) == 0 or path_len > MAX_SEQ_LEN: continue
 
             is_read = node not in contigs
             connected_contig = set(node.nodes).intersection(contigs)
