@@ -24,6 +24,7 @@ class SortHelper:
 class Graph:
 
     COMPARATOR_BY_SCORE_AND_LENGTH = lambda el: (el.score, el.node.len)
+    OVERLAP_SCORE = lambda *args: Graph.overlap_score(args[0])
 
     def __init__(self, contigs, reads):
         self.contigs = contigs
@@ -58,17 +59,29 @@ class Graph:
                 first_node = random.choice(contigs)
 
             for node in first_node.nodes:
-                paths, path_lens = self.dfs(node, [first_node], 0)
+                paths, path_lens = self.dfs(
+                    node, [first_node],
+                    Graph.OVERLAP_SCORE,
+                    Graph.next_using_the_best_score
+                )
                 all_paths.extend(paths)
                 all_path_lens.extend(path_lens)
 
-                paths, path_lens = self.dfs(node, [first_node], 1)
+                paths, path_lens = self.dfs(
+                    node, [first_node],
+                    Graph.extension_score,
+                    Graph.next_using_the_best_score
+                )
                 all_paths.extend(paths)
                 all_path_lens.extend(path_lens)
 
             n_next_nodes = len(first_node.nodes)
             for i in range(n_next_nodes + DELTA_TRIALS):
-                paths, path_lens = self.dfs(first_node, [], 2)
+                paths, path_lens = self.dfs(
+                    first_node, [],
+                    Graph.extension_score,
+                    Graph.next_using_monte_carlo
+                )
                 all_paths.extend(paths)
                 all_path_lens.extend(path_lens)
 
@@ -194,7 +207,7 @@ class Graph:
                         )
                         compl_q.add_overlap(t, overlap)
 
-    def dfs(self, start_node, start_path, funID):
+    def dfs(self, start_node, start_path, scores_fn, next_fn):
         paths = []
         path_lens = []
 
@@ -245,36 +258,7 @@ class Graph:
                 open_path_lens.clear()
                 break
 
-            ol_scores = []
-            ext_scores = []
-            for i in range(len(node.nodes)):
-                next_node = node.nodes[i]
-                ol = node.overlaps[i]
-
-                ol_score = Graph.overlap_score(ol)
-                ol_scores.append(SortHelper(next_node, ol_score))
-
-                ext_score = Graph.extension_score(ol, node, next_node)
-                ext_scores.append(SortHelper(next_node, ext_score))
-
-            ol_scores = sorted(
-                ol_scores,
-                key=Graph.COMPARATOR_BY_SCORE_AND_LENGTH,
-                reverse=True
-            )
-            ext_scores = sorted(
-                ext_scores,
-                key=Graph.COMPARATOR_BY_SCORE_AND_LENGTH,
-                reverse=True
-            )
-
-            if funID == 0:
-                next_nodes = Graph.next_nodes(ol_scores, active_path)
-            elif funID == 1:
-                next_nodes = Graph.next_nodes(ext_scores, active_path)
-            elif funID == 2:
-                next_nodes = Graph.next_nodes_using_monte_carlo(ext_scores, active_path)
-
+            next_nodes = Graph.next_nodes(node, active_path, scores_fn, next_fn)
             if len(next_nodes) == 0: continue
 
             path = copy.copy(active_path)
@@ -287,16 +271,29 @@ class Graph:
         return paths, path_lens
 
     @staticmethod
-    def next_nodes(scores, path):
-        next = []
-        """
-        for score in scores:
-            node = score.node
-            if node in path: continue
+    def next_nodes(node, path, scores_fn, next_fn):
+        scores = []
+        for i in range(len(node.nodes)):
+            next_node = node.nodes[i]
+            ol = node.overlaps[i]
 
-            next.append(node)
-            if len(next) == NUM_ELEMENTS: break
-        """
+            score = scores_fn(ol, node, next_node)
+            scores.append(SortHelper(next_node, score))
+
+        return next_fn(scores, path)
+
+    @staticmethod
+    def next_using_the_best_score(scores, path):
+        scores = sorted(
+            scores,
+            key=Graph.COMPARATOR_BY_SCORE_AND_LENGTH,
+            reverse=True
+        )
+
+        next = []
+
+        # TODO: CHECK
+        # if this is the best approach
         for i in range(NUM_ELEMENTS):
             node = scores[i].node
             if node in path: continue
@@ -305,12 +302,11 @@ class Graph:
         return next
 
     @staticmethod
-    def next_nodes_using_monte_carlo(extension_scores, path):
+    def next_using_monte_carlo(scores, path):
         next = []
-
         nodes = []
         weights = []
-        for node in extension_scores:
+        for node in scores:
             if node in path: continue
             nodes.append(node.node)
             weights.append(node.score)
