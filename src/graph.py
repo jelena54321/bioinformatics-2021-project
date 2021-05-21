@@ -7,7 +7,7 @@ import copy
 
 SEQ_ID_MIN = 0.9
 LEN_DELTA = 1000
-NUM_ELEMENTS = 2
+NUM_ELEMENTS = 3
 NUM_RUNS = 1
 DELTA_TRIALS = 10
 MAX_SEQ_LEN = 2_000_000
@@ -62,7 +62,7 @@ class Graph:
                 paths, path_lens = self.dfs(
                     node, [first_node],
                     Graph.OVERLAP_SCORE,
-                    Graph.next_using_the_best_score
+                    self.next_using_the_best_score
                 )
                 all_paths.extend(paths)
                 all_path_lens.extend(path_lens)
@@ -70,7 +70,7 @@ class Graph:
                 paths, path_lens = self.dfs(
                     node, [first_node],
                     Graph.extension_score,
-                    Graph.next_using_the_best_score
+                    self.next_using_the_best_score
                 )
                 all_paths.extend(paths)
                 all_path_lens.extend(path_lens)
@@ -80,7 +80,7 @@ class Graph:
                 paths, path_lens = self.dfs(
                     first_node, [],
                     Graph.extension_score,
-                    Graph.next_using_monte_carlo
+                    self.next_using_monte_carlo
                 )
                 all_paths.extend(paths)
                 all_path_lens.extend(path_lens)
@@ -207,6 +207,10 @@ class Graph:
                         )
                         compl_q.add_overlap(t, overlap)
 
+    def get_node_complement(self, node):
+        nodes = self.reads if node.id in self.reads else self.contigs
+        return nodes[Node.complement_id(node.id)]
+
     def dfs(self, start_node, start_path, scores_fn, next_fn):
         paths = []
         path_lens = []
@@ -236,8 +240,12 @@ class Graph:
                 open_paths.pop(0)
                 open_path_lens.pop(0)
 
-            if node in active_path: continue
-            if len(node.nodes) == 0 or path_len > MAX_SEQ_LEN: continue
+            node_compl = self.get_node_complement(node)
+            if node in active_path or node_compl in active_path: continue
+
+            if len(node.nodes) == 0: continue
+
+            if path_len > MAX_SEQ_LEN: continue
 
             is_read = node not in contigs
             connected_contig = set(node.nodes).intersection(contigs)
@@ -258,7 +266,7 @@ class Graph:
                 open_path_lens.clear()
                 break
 
-            next_nodes = Graph.next_nodes(node, active_path, scores_fn, next_fn)
+            next_nodes = self.next_nodes(node, active_path, scores_fn, next_fn)
             if len(next_nodes) == 0: continue
 
             path = copy.copy(active_path)
@@ -270,8 +278,7 @@ class Graph:
 
         return paths, path_lens
 
-    @staticmethod
-    def next_nodes(node, path, scores_fn, next_fn):
+    def next_nodes(self, node, path, scores_fn, next_fn):
         scores = []
         for i in range(len(node.nodes)):
             next_node = node.nodes[i]
@@ -282,8 +289,7 @@ class Graph:
 
         return next_fn(scores, path)
 
-    @staticmethod
-    def next_using_the_best_score(scores, path):
+    def next_using_the_best_score(self, scores, path):
         scores = sorted(
             scores,
             key=Graph.COMPARATOR_BY_SCORE_AND_LENGTH,
@@ -296,18 +302,21 @@ class Graph:
         # if this is the best approach
         for i in range(NUM_ELEMENTS):
             node = scores[i].node
-            if node in path: continue
+            if node in path or self.get_node_complement(node) in path:
+                continue
+
             next.append(node)
 
         return next
 
-    @staticmethod
-    def next_using_monte_carlo(scores, path):
+    def next_using_monte_carlo(self, scores, path):
         next = []
         nodes = []
         weights = []
         for node in scores:
-            if node in path: continue
+            if node.node in path or self.get_node_complement(node.node) in path:
+                continue
+
             nodes.append(node.node)
             weights.append(node.score)
 
@@ -376,7 +385,7 @@ class Graph:
             for record in SeqIO.parse(handle, 'fasta'):
                 if record.id in used_nodes:
                     nodes[record.id].seq = record.seq
-                    return
+                    continue
 
                 compl_id = Node.complement_id(record.id)
                 if compl_id in used_nodes:
@@ -392,7 +401,7 @@ class Graph:
 
     @staticmethod
     def overlap_score(ol):
-        if isinstance(ol, pafpy.PafRecord):
+        if type(ol) is pafpy.PafRecord:
             seq_id = Graph.sequence_identity(ol)
         else:
             seq_id = ol.seq_id
