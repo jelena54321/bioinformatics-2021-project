@@ -1,19 +1,30 @@
-from typing import List
-import pafpy
 from Bio import SeqIO, Seq, SeqRecord
 from node import Node, Overlap
+import pafpy
 import random
+import copy
 
 
-SEQ_ID_MIN = 0.85
-LEN_DELTA = 100
-HERURISTIC_DEPTH = 30
-NUM_ELEMENT = 3
-NUM_RUNS = 10
-NUM_TRAILS = 3
+SEQ_ID_MIN = 0.9
+LEN_DELTA = 1000
+NUM_ELEMENTS = 3
+NUM_RUNS = 1
+DELTA_TRIALS = 100
+MAX_SEQ_LEN = 2_000_000
+MIN_LEN = 10_000
+
+
+class SortHelper:
+
+    def __init__(self, node, score):
+        self.node = node
+        self.score = score
 
 
 class Graph:
+
+    COMPARATOR_BY_SCORE_AND_LENGTH = lambda el: (el.score, el.node.len)
+    OVERLAP_SCORE = lambda *args: Graph.overlap_score(args[0])
 
     def __init__(self, contigs, reads):
         self.contigs = contigs
@@ -42,127 +53,66 @@ class Graph:
 
         return Graph(contigs, reads)
 
-
-    #klasa koja ce mi pomoc sortirati
-    class helper_sort:
-        score: int
-        node: Node
-        def __init__(self, n:Node, s:int):
-            self.score = s
-            self.node = n
-
-
-    #stavlja nejbolje elemente na next
-    def get_best_paths(self, l, next, current_path):
-        num_elementa_in_next = 0
-
-        for i in l:
-            if i in current_path or i in next:
-                continue
-            next.append(i.node)
-            num_elementa_in_next += 1
-            if num_elementa_in_next == NUM_ELEMENT:
-                break
-
-    def monte_carlo(self, all_extension_scores, next, current_path):
-        
-        nodes = []
-        weight = []
-        for nod in all_extension_scores:
-            nodes.append(nod.node)
-            weight.append(nod.score)
-
-        num_all_len = len(nodes) ## ili neka druga vrijednost
-        curent_element = 0
-
-        while num_all_len:
-            nod = random.choices(nodes, weight)
-            num_all_len -= 1
-            if nod in current_path:
-                continue
-            curent_element += 1
-            next.append(nod)
-            return 
-
-        return 
-
-
-    def dfs(self, current_node: Node, heuristic_depth: int, all_found_paths, current_path, funID):
-        #found new counting
-        if current_node in self.contigs:
-            heuristic_depth = HERURISTIC_DEPTH
-
-        #dfs dosao do kraj, ili je zbog heuristike ili nea vise djece
-        if heuristic_depth == 0 or len(current_node) == 0:
-            all_found_paths.append(current_path)
-            return 
-
-        # dobi sve elemente
-        all_overlap_scores = []
-        all_extension_scores = []
-
-        for i in range(len(current_node)):
-            all_overlap_scores.append(self.helper_sort(current_node.nodes[i], Graph.overlap_score(current_node.overlaps[i])))
-            all_extension_scores.append(self.helper_sort(current_node.nodes[i], Graph.extension_score(current_node.overlaps[i])))
-
-        sorted(all_overlap_scores, key=lambda el: el.score, reverse=True)
-        sorted(all_extension_scores, key=lambda el: el.score, reverse=True)
-
-        next = []
-        
-        if funID == 0:
-            self.get_best_paths(all_overlap_scores, next, current_path)
-        elif funID == 1:
-            self.get_best_paths(all_extension_scores, next, current_path)
-        elif funID == 2:
-            self.monte_carlo(all_extension_scores, next, current_path)
-
-        for i in next:
-            current_path.append(i)
-            self.dfs(i, heuristic_depth - 1, all_found_paths, current_path)
-            #backtracking
-            current_path.pop()
-        
-
     def generate_paths(self):
-        """
-        TODO: Traverse through graph using depth first search and return list of found
-        paths (list of node lists).
-        """
-        current_path = []
-        all_found_paths = []
+        all_paths = []
+        all_path_lens = []
         for run in range(NUM_RUNS):
-            print("grap.generate_paths >> Finding_Paths", run)
+            print_str = (
+                'graph.Graph.generate_paths >> '
+                f'Finding Paths - run: {run + 1}/{NUM_RUNS}'
+            )
+            print(print_str)
 
-            first_node = random.choice(list(self.contigs.values()))
-            while(len(first_node) == 0):
-                first_node = random.choice(list(self.contigs.values()))
+            contigs = list(self.contigs.values())
+            first_node = random.choice(contigs)
+            while len(first_node.nodes) == 0:
+                first_node = random.choice(contigs)
 
-            current_path.append(first_node)
-            for nod in first_node.nodes:
-                current_path.append(first_node)
-                self.dfs(nod, HERURISTIC_DEPTH, all_found_paths, current_path)
-                self.dfs(nod, HERURISTIC_DEPTH, all_found_paths, current_path)
-                for i in range(NUM_TRAILS):
-                    self.dfs(nod, HERURISTIC_DEPTH, all_found_paths, current_path)
-                current_path.pop()
+            for node in first_node.nodes:
+                paths, path_lens = self.dfs(
+                    node, [first_node],
+                    Graph.OVERLAP_SCORE,
+                    self.next_using_the_best_score
+                )
+                all_paths.extend(paths)
+                all_path_lens.extend(path_lens)
 
-        return all_found_paths     
-        
+                paths, path_lens = self.dfs(
+                    node, [first_node],
+                    Graph.extension_score,
+                    self.next_using_the_best_score
+                )
+                all_paths.extend(paths)
+                all_path_lens.extend(path_lens)
 
-    def generate_sequence(self, paths, contigs, reads, out):
-        biggest_group = max(Graph.generate_groups(paths), key=len)
-        best_path = best_path(biggest_group)
+            n_next_nodes = len(first_node.nodes)
+            for i in range(n_next_nodes + DELTA_TRIALS):
+                paths, path_lens = self.dfs(
+                    first_node, [],
+                    Graph.extension_score,
+                    self.next_using_monte_carlo
+                )
+                all_paths.extend(paths)
+                all_path_lens.extend(path_lens)
 
-        Graph.load_sequences(contigs, self.contigs)
+        print(f'graph.Graph.generate_paths >> Found {len(all_paths)} paths.')
+        return all_paths, all_path_lens
+
+    def generate_sequence(self, paths, path_lens, contigs, reads, out):
+        biggest_group = max(Graph.generate_groups(paths, path_lens), key=len)
+        best_path = Graph.best_path(biggest_group)
+
+        used_nodes = set(map(lambda node: node.id, best_path))
+
+        Graph.load_sequences(contigs, self.contigs, used_nodes)
         print('graph.Graph.generate_sequence >> Loaded contigs.')
 
-        Graph.load_sequences(reads, self.reads)
+        Graph.load_sequences(reads, self.reads, used_nodes)
         print('graph.Graph.generate_sequence >> Loaded reads.')
 
         seq = Graph.build_sequence(best_path)
-        record = SeqRecord.SeqRecord(Seq.Seq(seq), id='output_sequence')
-        with open(out_path, 'w') as handle:
+        record = SeqRecord.SeqRecord(seq, id='output_sequence')
+        with open(out, 'w') as handle:
             SeqIO.write([record], handle, 'fasta')
 
         print_str = (
@@ -180,7 +130,7 @@ class Graph:
                 if Graph.sequence_identity(ol) < SEQ_ID_MIN: continue
 
                 if ol.qname not in queries:
-                    q = Node(ol.qname)
+                    q = Node(ol.qname, ol.qlen)
                     queries[q.id] = q
                     compl_q = Node.complement(q)
                     queries[compl_q.id] = compl_q
@@ -189,7 +139,7 @@ class Graph:
                     compl_q = queries[Node.complement_id(q.id)]
 
                 if ol.tname not in targets:
-                    t = Node(ol.tname)
+                    t = Node(ol.tname, ol.tlen)
                     targets[t.id] = t
                     compl_t = Node.complement(t)
                     targets[compl_t.id] = compl_t
@@ -209,74 +159,202 @@ class Graph:
                 if not should_add_overlap(ol, t, compl_t, queries, targets):
                     continue
 
+                seq_id = Graph.sequence_identity(ol)
                 if ol.strand == pafpy.Strand.Forward:
                     if t_left > q_left:
                         overlap = Overlap(
-                            ol.tstart, ol.tend, ol.tlen,
-                            ol.qstart, ol.qend, ol.qlen,
-                            ol.mlen, ol.blen
+                            ol.tstart, ol.tend,
+                            ol.qstart, ol.qend,
+                            seq_id
                         )
                         t.add_overlap(q, overlap)
 
                         overlap = Overlap(
-                            ol.qlen - ol.qend, ol.qlen - ol.qstart, ol.qlen,
-                            ol.tlen - ol.tend, ol.tlen - ol.tstart, ol.tlen,
-                            ol.mlen, ol.blen
+                            ol.qlen - ol.qend, ol.qlen - ol.qstart,
+                            ol.tlen - ol.tend, ol.tlen - ol.tstart,
+                            seq_id
                         )
                         compl_q.add_overlap(compl_t, overlap)
 
                     else:
                         overlap = Overlap(
-                            ol.qstart, ol.qend, ol.qlen,
-                            ol.tstart, ol.tend, ol.tlen,
-                            ol.mlen, ol.blen
+                            ol.qstart, ol.qend,
+                            ol.tstart, ol.tend,
+                            seq_id
                         )
                         q.add_overlap(t, overlap)
 
                         overlap = Overlap(
-                            ol.tlen - ol.tend, ol.tlen - ol.qstart, ol.tlen,
-                            ol.qlen - ol.qend, ol.qlen - ol.qstart, ol.qlen,
-                            ol.mlen, ol.blen
+                            ol.tlen - ol.tend, ol.tlen - ol.tstart,
+                            ol.qlen - ol.qend, ol.qlen - ol.qstart,
+                            seq_id
                         )
                         compl_t.add_overlap(compl_q, overlap)
 
                 else:
                     if t_left > q_right:
                         overlap = Overlap(
-                            ol.qstart, ol.qend, ol.qlen,
-                            ol.tlen - ol.tend, ol.tlen - ol.tstart, ol.tlen,
-                            ol.mlen, ol.blen
+                            ol.qstart, ol.qend,
+                            ol.tlen - ol.tend, ol.tlen - ol.tstart,
+                            seq_id
                         )
                         q.add_overlap(compl_t, overlap)
 
                         overlap = Overlap(
-                            ol.tstart, ol.tend, ol.tlen,
-                            ol.qlen - ol.qend, ol.qlen - ol.qstart, ol.qlen,
-                            ol.mlen, ol.blen
+                            ol.tstart, ol.tend,
+                            ol.qlen - ol.qend, ol.qlen - ol.qstart,
+                            seq_id
                         )
                         t.add_overlap(compl_q, overlap)
 
                     else:
                         overlap = Overlap(
-                            ol.tlen - ol.tend, ol.tlen - ol.tstart, ol.tlen,
-                            ol.qstart, ol.qend, ol.qlen,
-                            ol.mlen, ol.blen
+                            ol.tlen - ol.tend, ol.tlen - ol.tstart,
+                            ol.qstart, ol.qend,
+                            seq_id
                         )
                         compl_t.add_overlap(q, overlap)
 
                         overlap = Overlap(
-                            ol.qlen - ol.qend, ol.qlen - ol.qstart, ol.qlen,
-                            ol.tstart, ol.tend, ol.tlen,
-                            ol.mlen, ol.blen
+                            ol.qlen - ol.qend, ol.qlen - ol.qstart,
+                            ol.tstart, ol.tend,
+                            seq_id
                         )
                         compl_q.add_overlap(t, overlap)
 
+    def get_node_complement(self, node):
+        nodes = self.reads if node.id in self.reads else self.contigs
+        return nodes[Node.complement_id(node.id)]
+
+    def dfs(self, start_node, start_path, scores_fn, next_fn):
+        paths = []
+        path_lens = []
+
+        open_nodes = [[start_node]]
+        open_paths = [copy.copy(start_path)]
+        start_path_len = 0 if len(start_path) == 0 else start_path[0].len
+        open_path_lens = [start_path_len]
+
+        contigs = set(self.contigs.values())
+        visited = set()
+
+        while len(open_nodes) != 0:
+
+            node = open_nodes[0].pop(0)
+            active_path = open_paths[0]
+
+            if len(active_path) == 0:
+                ext_len = node.len
+            else:
+                ol = active_path[-1].overlap_for_node(node)
+                ext_len = node.len - ol.tend
+
+            path_len = open_path_lens[0] + ext_len
+
+            if len(open_nodes[0]) == 0:
+                open_nodes.pop(0)
+                open_paths.pop(0)
+                open_path_lens.pop(0)
+
+            if node in visited:
+                continue
+            else:
+                visited.add(node)
+
+            node_compl = self.get_node_complement(node)
+            if node in active_path or node_compl in active_path: continue
+
+            if len(node.nodes) == 0 or path_len > MAX_SEQ_LEN: continue
+
+            is_read = node not in contigs
+            connected_contig = set(node.nodes).intersection(contigs)
+            if is_read and len(connected_contig) != 0:
+                contig = connected_contig.pop()
+
+                path = copy.copy(active_path)
+                path.append(node)
+                path.append(contig)
+                paths.append(path)
+
+                ol = node.overlap_for_node(contig)
+                ext_len = contig.len - ol.tend
+                path_lens.append(path_len + ext_len)
+
+                open_nodes.clear()
+                open_paths.clear()
+                open_path_lens.clear()
+                break
+
+            next_nodes = self.next_nodes(node, active_path, scores_fn, next_fn)
+            if len(next_nodes) == 0: continue
+
+            path = copy.copy(active_path)
+            path.append(node)
+
+            open_nodes.insert(0, next_nodes)
+            open_paths.insert(0, path)
+            open_path_lens.insert(0, path_len)
+
+        return paths, path_lens
+
+    def next_nodes(self, node, path, scores_fn, next_fn):
+        scores = []
+        for i in range(len(node.nodes)):
+            next_node = node.nodes[i]
+            ol = node.overlaps[i]
+
+            score = scores_fn(ol, node, next_node)
+            scores.append(SortHelper(next_node, score))
+
+        return next_fn(scores, path)
+
+    def next_using_the_best_score(self, scores, path):
+        scores = sorted(
+            scores,
+            key=Graph.COMPARATOR_BY_SCORE_AND_LENGTH,
+            reverse=True
+        )
+
+        next = []
+
+        # TODO: CHECK
+        # if this is the best approach
+        for i in range(NUM_ELEMENTS):
+            node = scores[i].node
+            if node in path or self.get_node_complement(node) in path:
+                continue
+
+            next.append(node)
+
+        return next
+
+    def next_using_monte_carlo(self, scores, path):
+        next = []
+        nodes = []
+        weights = []
+        for node in scores:
+            if node.node in path or self.get_node_complement(node.node) in path:
+                continue
+
+            nodes.append(node.node)
+            weights.append(node.score)
+
+        if len(nodes) == 0: return next
+
+        node = random.choices(nodes, weights)
+        next.append(node[0])
+        return next
+
     @staticmethod
-    def generate_groups(paths):
+    def generate_groups(paths, path_lens):
+        if all(path_len < MIN_LEN for path_len in path_lens):
+            return [paths]
+
         len_groups = dict()
 
-        for path in paths:
-            path_len = len(path)
+        for i in range(len(paths)):
+            path = paths[i]
+            path_len = path_lens[i]
 
             found_group = False
             for len_group in len_groups:
@@ -290,7 +368,7 @@ class Graph:
             if not found_group:
                 len_groups[path_len] = [path]
 
-        return len_groups.values()
+        return list(len_groups.values())
 
     @staticmethod
     def best_path(group):
@@ -320,39 +398,49 @@ class Graph:
             start = ol.tstart
 
         seq += path[-1].seq[start:]
-
         return seq
 
     @staticmethod
-    def load_sequences(path, nodes):
+    def load_sequences(path, nodes, used_nodes):
         with open(path) as handle:
             for record in SeqIO.parse(handle, 'fasta'):
-                nodes[record.id].seq = record.seq
-                compl_seq = Node.complement_sequence(record.seq)
-                nodes[Node.complement_id(record.id)].seq = compl_seq
+                if record.id in used_nodes:
+                    nodes[record.id].seq = record.seq
+                    continue
+
+                compl_id = Node.complement_id(record.id)
+                if compl_id in used_nodes:
+                    nodes[compl_id].seq = Node.complement_sequence(record.seq)
 
     @staticmethod
-    def sequence_identity(ol):
+    def sequence_identity(ol: pafpy.PafRecord):
         return ol.mlen / ol.blen
 
     @staticmethod
-    def overlap_score(ol):
-        avg_ol_len = (ol.qend-ol.qstart+ol.tend-ol.tstart) / 2
-        return Graph.sequence_identity(ol) * avg_ol_len
+    def average_overlap_length(ol):
+        return (ol.qend-ol.qstart+ol.tend-ol.tstart) / 2
 
     @staticmethod
-    def extension_score(ol):
+    def overlap_score(ol):
+        if type(ol) is pafpy.PafRecord:
+            seq_id = Graph.sequence_identity(ol)
+        else:
+            seq_id = ol.seq_id
+        return seq_id * Graph.average_overlap_length(ol)
+
+    @staticmethod
+    def extension_score(ol: Overlap, q, t):
         ol_score = Graph.overlap_score(ol)
-        oh_1 = ol.qlen - ol.qend
+        oh_1 = len(q) - ol.qend
         oh_2 = ol.tstart
-        ext_len = ol.tlen - ol.tend
+        ext_len = len(t) - ol.tend
         return ol_score + ext_len/2 - (oh_1 + oh_2)/2
 
     @staticmethod
     def should_add_overlap(ol, read, compl_read, contigs, reads):
-        if len(read) == 0 and len(compl_read) == 0: return True
+        if len(read.nodes) == 0 and len(compl_read.nodes) == 0: return True
 
-        r = read if len(read) > 0 else compl_read
+        r = read if len(read.nodes) > 0 else compl_read
         old_contig = r.nodes[0]
         old_overlap = r.overlaps[0]
 

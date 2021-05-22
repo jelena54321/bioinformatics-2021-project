@@ -12,8 +12,11 @@ def main():
     args = parser.parse_args()
 
     graph = Graph.construct(args.reads_to_contigs, args.reads_to_reads)
-    paths = graph.generate_paths()
-    graph.generate_sequence(paths, args.contigs, args.reads, args.out)
+    paths, path_lens = graph.generate_paths()
+    graph.generate_sequence(
+        paths, path_lens,
+        args.contigs, args.reads, args.out
+    )
 
 
 if __name__ == '__main__':
