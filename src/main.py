@@ -1,6 +1,7 @@
 import argparse
 from graph import Graph
 
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('contigs', type=str)
@@ -16,6 +17,7 @@ def main():
         paths, path_lens,
         args.contigs, args.reads, args.out
     )
+
 
 if __name__ == '__main__':
     main()

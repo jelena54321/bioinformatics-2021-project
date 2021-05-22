@@ -9,6 +9,7 @@ class Overlap:
 
         self.seq_id = seq_id
 
+
 class Node:
 
     def __init__(self, id, len):
@@ -36,7 +37,7 @@ class Node:
     @staticmethod
     def complement_id(id):
         idx = id.find('~')
-        return '~' + id if idx == -1 else id[idx + 1:]
+        return '~' + id if idx == -1 else id[idx+1:]
 
     @staticmethod
     def complement_sequence(seq):
