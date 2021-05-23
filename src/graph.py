@@ -11,6 +11,7 @@ NUM_ELEMENTS = 3
 NUM_RUNS = 1
 DELTA_TRIALS = 100
 MAX_SEQ_LEN = 2_000_000
+MAX_SEQ_BETWEEN_LEN = 150_000
 MIN_LEN = 10_000
 
 
@@ -230,7 +231,7 @@ class Graph:
         paths = []
         path_lens = []
 
-        open_nodes = [[start_node]]
+        open_nodes_between = [[start_node]]
         open_paths = [copy.copy(start_path)]
         start_path_len = 0 if len(start_path) == 0 else start_path[0].len
         open_path_lens = [start_path_len]
@@ -238,23 +239,27 @@ class Graph:
         contigs = set(self.contigs.values())
         visited = set()
 
-        while len(open_nodes) != 0:
+        while len(open_nodes_between) != 0:
 
-            node = open_nodes[0].pop(0)
+            node = open_nodes_between[0].pop()
             active_path = open_paths[0]
+            
+            #ako mi nije counting
+            ext_len = 0
 
-            if len(active_path) == 0:
-                ext_len = node.len
-            else:
-                ol = active_path[-1].overlap_for_node(node)
-                ext_len = node.len - ol.tend
+            if node not in contigs:
+                if len(active_path) == 0:
+                    ext_len = node.len
+                else:
+                    ol = active_path[-1].overlap_for_node(node)
+                    ext_len = node.len - ol.tend
 
             path_len = open_path_lens[0] + ext_len
 
-            if len(open_nodes[0]) == 0:
-                open_nodes.pop(0)
-                open_paths.pop(0)
-                open_path_lens.pop(0)
+            if len(open_nodes_between[0]) == 0:
+                open_nodes_between.pop()
+                open_paths.pop()
+                open_path_lens.pop()
 
             if node in visited:
                 continue
@@ -264,7 +269,7 @@ class Graph:
             node_compl = self.get_node_complement(node)
             if node in active_path or node_compl in active_path: continue
 
-            if len(node.nodes) == 0 or path_len > MAX_SEQ_LEN: continue
+            if len(node.nodes) == 0 or path_len > MAX_SEQ_BETWEEN_LEN: continue
 
             is_read = node not in contigs
             connected_contig = set(node.nodes).intersection(contigs)
@@ -280,10 +285,15 @@ class Graph:
                 ext_len = contig.len - ol.tend
                 path_lens.append(path_len + ext_len)
 
-                open_nodes.clear()
+                open_nodes_between.clear()
                 open_paths.clear()
                 open_path_lens.clear()
-                break
+
+                open_nodes_between.append(next_nodes)
+                open_paths = [copy.copy(next_nodes)]
+                open_path_lens = [next_nodes]
+
+                continue
 
             next_nodes = self.next_nodes(node, active_path, scores_fn, next_fn)
             if len(next_nodes) == 0: continue
@@ -291,9 +301,9 @@ class Graph:
             path = copy.copy(active_path)
             path.append(node)
 
-            open_nodes.insert(0, next_nodes)
-            open_paths.insert(0, path)
-            open_path_lens.insert(0, path_len)
+            open_nodes_between.append(next_nodes)
+            open_paths.append(path)
+            open_path_lens.append(path_len)
 
         return paths, path_lens
 
