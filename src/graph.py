@@ -106,6 +106,8 @@ class Graph:
 
     def generate_sequence(self, paths, path_lens, contigs, reads, out):
         paths, path_lens = self.filter_unique_paths(paths, path_lens)
+        paths, path_lens = self.remove_subpaths(paths, path_lens)
+
         biggest_group = max(Graph.generate_groups(paths, path_lens), key=len)
         best_path = Graph.best_path(biggest_group)
 
@@ -400,7 +402,51 @@ class Graph:
 
         print_str = (
             'graph.Graph.filter_unique_paths >> '
-            f'Discarded {n_paths - len(unique_paths)} duplicate paths.'
+            f'Removed {n_paths - len(unique_paths)} duplicate paths.'
+        )
+        print(print_str)
+
+        return unique_paths, lens
+
+    def remove_subpaths(self, paths, path_lens):
+        to_be_filtered = set()
+
+        n_paths = len(paths)
+        for i in range(n_paths):
+            path = paths[i]
+            path_ctgs = self.filter_contigs(path)
+
+            for j in range(i + 1, n_paths):
+                other_path = paths[j]
+                other_path_ctgs = self.filter_contigs(other_path)
+
+                if len(path_ctgs) == len(other_path_ctgs): continue
+
+                path_ctgs_sublist_of_other_path_ctgs = Graph.is_sublist(
+                    path_ctgs,
+                    other_path_ctgs
+                )
+                other_path_ctgs_sublist_of_path_ctgs = Graph.is_sublist(
+                    other_path_ctgs,
+                    path_ctgs
+                )
+
+                if path_ctgs_sublist_of_other_path_ctgs:
+                    to_be_filtered.add(i)
+                elif other_path_ctgs_sublist_of_path_ctgs:
+                    to_be_filtered.add(j)
+
+        unique_paths = []
+        lens = []
+        for i in range(n_paths):
+            if i in to_be_filtered: continue
+
+            unique_paths.append(paths[i])
+            lens.append(path_lens[i])
+
+        print_str = (
+            'graph.Graph.filter_sub_paths >> '
+            f'Removed {n_paths - len(unique_paths)} subpaths.'
         )
         print(print_str)
 
