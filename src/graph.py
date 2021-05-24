@@ -105,6 +105,7 @@ class Graph:
         return paths, path_lens
 
     def generate_sequence(self, paths, path_lens, contigs, reads, out):
+        paths, path_lens = self.filter_unique_paths(paths, path_lens)
         biggest_group = max(Graph.generate_groups(paths, path_lens), key=len)
         best_path = Graph.best_path(biggest_group)
 
@@ -351,6 +352,59 @@ class Graph:
         node = random.choices(nodes, weights)
         next.append(node[0])
         return next
+
+    def filter_unique_paths(self, paths, path_lens):
+        to_be_filtered = set()
+
+        n_paths = len(paths)
+        for i in range(n_paths):
+            path = paths[i]
+
+            for j in range(i + 1, n_paths):
+                other_path = paths[j]
+
+                path_len = len(path)
+                if path_len != len(other_path): continue
+
+                if path[0] == other_path[0]:
+                    is_reversed = False
+                elif path[0] == self.get_node_complement(other_path[-1]):
+                    is_reversed = True
+                else:
+                    continue
+
+                different = False
+                for k in range(1, path_len):
+                    node = path[k]
+
+                    if is_reversed:
+                        idx = path_len - k - 1
+                        other_node = self.get_node_complement(other_path[idx])
+                    else:
+                        other_node = other_path[k]
+
+                    if node != other_node:
+                        different = True
+                        break
+
+                if not different:
+                    to_be_filtered.add(j)
+
+        unique_paths = []
+        lens = []
+        for i in range(n_paths):
+            if i in to_be_filtered: continue
+
+            unique_paths.append(paths[i])
+            lens.append(path_lens[i])
+
+        print_str = (
+            'graph.Graph.filter_unique_paths >> '
+            f'Discarded {n_paths - len(unique_paths)} duplicate paths.'
+        )
+        print(print_str)
+
+        return unique_paths, lens
 
     @staticmethod
     def generate_groups(paths, path_lens):
