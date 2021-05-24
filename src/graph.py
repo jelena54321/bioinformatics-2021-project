@@ -6,11 +6,10 @@ import copy
 
 
 SEQ_ID_MIN = 0.9
-LEN_DELTA = 1000
-NUM_ELEMENTS = 3
-NUM_RUNS = 1
-DELTA_TRIALS = 100
-MAX_SEQ_LEN = 2_000_000
+LEN_DELTA = 100_000
+NUM_ELEMENTS = 2
+DELTA_TRIALS = 300
+MAX_BETWEEN_LEN = 250_000
 MIN_LEN = 10_000
 
 
@@ -41,7 +40,7 @@ class Graph:
         )
         print_str = (
             'graph.Graph.construct >> '
-            'Generated overlaps between contigs and reads.'
+            'Added overlaps between contigs and reads.'
         )
         print(print_str)
 
@@ -49,56 +48,57 @@ class Graph:
             reads_to_reads, reads, reads,
             lambda *_: True
         )
-        print('graph.Graph.construct >> Generated overlaps between reads.')
+        print('graph.Graph.construct >> Added overlaps between reads.')
 
         return Graph(contigs, reads)
 
     def generate_paths(self):
-        all_paths = []
-        all_path_lens = []
-        for run in range(NUM_RUNS):
-            print_str = (
-                'graph.Graph.generate_paths >> '
-                f'Finding Paths - run: {run + 1}/{NUM_RUNS}'
-            )
-            print(print_str)
+        paths = []
+        path_lens = []
 
-            contigs = list(self.contigs.values())
-            first_node = random.choice(contigs)
-            while len(first_node.nodes) == 0:
-                first_node = random.choice(contigs)
+        print('graph.Graph.generate_paths >> Finding paths...')
 
-            for node in first_node.nodes:
-                paths, path_lens = self.dfs(
-                    node, [first_node],
+        for contig in list(self.contigs.values()):
+
+            n_successors = len(contig.nodes)
+            if n_successors == 0: continue
+
+            for node in contig.nodes:
+                path, path_len = self.dfs(
+                    node, [contig],
                     Graph.OVERLAP_SCORE,
                     self.next_using_the_best_score
                 )
-                all_paths.extend(paths)
-                all_path_lens.extend(path_lens)
+                if path is None: continue
+                paths.append(path)
+                path_lens.append(path_len)
 
-                paths, path_lens = self.dfs(
-                    node, [first_node],
+                path, path_len = self.dfs(
+                    node, [contig],
                     Graph.extension_score,
                     self.next_using_the_best_score
                 )
-                all_paths.extend(paths)
-                all_path_lens.extend(path_lens)
+                if path is None: continue
+                paths.append(path)
+                path_lens.append(path_len)
 
-            n_next_nodes = len(first_node.nodes)
-            for i in range(n_next_nodes + DELTA_TRIALS):
-                paths, path_lens = self.dfs(
-                    first_node, [],
+            for _ in range(n_successors + DELTA_TRIALS):
+                path, path_len = self.dfs(
+                    contig, [],
                     Graph.extension_score,
                     self.next_using_monte_carlo
                 )
-                all_paths.extend(paths)
-                all_path_lens.extend(path_lens)
+                if path is None: continue
+                paths.append(path)
+                path_lens.append(path_len)
 
-        print(f'graph.Graph.generate_paths >> Found {len(all_paths)} paths.')
-        return all_paths, all_path_lens
+        print(f'graph.Graph.generate_paths >> Found {len(paths)} paths.')
+        return paths, path_lens
 
     def generate_sequence(self, paths, path_lens, contigs, reads, out):
+        paths, path_lens = self.filter_unique_paths(paths, path_lens)
+        paths, path_lens = self.remove_subpaths(paths, path_lens)
+
         biggest_group = max(Graph.generate_groups(paths, path_lens), key=len)
         best_path = Graph.best_path(biggest_group)
 
@@ -227,27 +227,36 @@ class Graph:
         return nodes[Node.complement_id(node.id)]
 
     def dfs(self, start_node, start_path, scores_fn, next_fn):
-        paths = []
-        path_lens = []
+        cpt_path = None
+        cpt_path_len = 0
 
         open_nodes = [[start_node]]
         open_paths = [copy.copy(start_path)]
         start_path_len = 0 if len(start_path) == 0 else start_path[0].len
         open_path_lens = [start_path_len]
+        open_between_lens = [0]
 
         contigs = set(self.contigs.values())
         visited = set()
+        if len(start_path) != 0:
+            visited.add(start_path[0])
 
         while len(open_nodes) != 0:
 
             node = open_nodes[0].pop(0)
             active_path = open_paths[0]
 
+            between_len = open_between_lens[0]
+            is_read = node not in contigs
             if len(active_path) == 0:
                 ext_len = node.len
             else:
-                ol = active_path[-1].overlap_for_node(node)
-                ext_len = node.len - ol.tend
+                prev_node = active_path[-1]
+                ol = prev_node.overlap_for_node(node)
+                ext_len = -(prev_node.len-ol.qstart) + (node.len-ol.tstart)
+
+                if is_read:
+                    between_len += node.len - ol.tend
 
             path_len = open_path_lens[0] + ext_len
 
@@ -255,6 +264,7 @@ class Graph:
                 open_nodes.pop(0)
                 open_paths.pop(0)
                 open_path_lens.pop(0)
+                open_between_lens.pop(0)
 
             if node in visited:
                 continue
@@ -264,26 +274,37 @@ class Graph:
             node_compl = self.get_node_complement(node)
             if node in active_path or node_compl in active_path: continue
 
-            if len(node.nodes) == 0 or path_len > MAX_SEQ_LEN: continue
+            if len(node.nodes) == 0 or between_len > MAX_BETWEEN_LEN:
+                continue
 
-            is_read = node not in contigs
             connected_contig = set(node.nodes).intersection(contigs)
             if is_read and len(connected_contig) != 0:
                 contig = connected_contig.pop()
+                contig_compl = self.get_node_complement(contig)
+                if contig in active_path or contig_compl in active_path:
+                    continue
 
-                path = copy.copy(active_path)
-                path.append(node)
-                path.append(contig)
-                paths.append(path)
+                cpt_path = copy.copy(active_path)
+                cpt_path.append(node)
+                tmp_path = copy.copy(cpt_path)
+                cpt_path.append(contig)
 
                 ol = node.overlap_for_node(contig)
-                ext_len = contig.len - ol.tend
-                path_lens.append(path_len + ext_len)
+                ext_len = -(node.len-ol.qstart) + (contig.len-ol.tstart)
+                cpt_path_len = path_len + ext_len
 
                 open_nodes.clear()
                 open_paths.clear()
                 open_path_lens.clear()
-                break
+                open_between_lens.clear()
+                visited.clear()
+
+                open_nodes.insert(0, [contig])
+                open_paths.insert(0, tmp_path)
+                open_path_lens.insert(0, path_len)
+                open_between_lens.insert(0, 0)
+
+                continue
 
             next_nodes = self.next_nodes(node, active_path, scores_fn, next_fn)
             if len(next_nodes) == 0: continue
@@ -294,8 +315,9 @@ class Graph:
             open_nodes.insert(0, next_nodes)
             open_paths.insert(0, path)
             open_path_lens.insert(0, path_len)
+            open_between_lens.insert(0, between_len)
 
-        return paths, path_lens
+        return cpt_path, cpt_path_len
 
     def next_nodes(self, node, path, scores_fn, next_fn):
         scores = []
@@ -316,10 +338,7 @@ class Graph:
         )
 
         next = []
-
-        # TODO: CHECK
-        # if this is the best approach
-        for i in range(NUM_ELEMENTS):
+        for i in range(min(NUM_ELEMENTS, len(scores))):
             node = scores[i].node
             if node in path or self.get_node_complement(node) in path:
                 continue
@@ -344,6 +363,122 @@ class Graph:
         node = random.choices(nodes, weights)
         next.append(node[0])
         return next
+
+    def filter_unique_paths(self, paths, path_lens):
+        to_be_filtered = set()
+
+        n_paths = len(paths)
+        for i in range(n_paths):
+            path = paths[i]
+
+            for j in range(i + 1, n_paths):
+                other_path = paths[j]
+
+                path_len = len(path)
+                if path_len != len(other_path): continue
+
+                if path[0] == other_path[0]:
+                    is_reversed = False
+                elif path[0] == self.get_node_complement(other_path[-1]):
+                    is_reversed = True
+                else:
+                    continue
+
+                different = False
+                for k in range(1, path_len):
+                    node = path[k]
+
+                    if is_reversed:
+                        idx = path_len - k - 1
+                        other_node = self.get_node_complement(other_path[idx])
+                    else:
+                        other_node = other_path[k]
+
+                    if node != other_node:
+                        different = True
+                        break
+
+                if not different:
+                    to_be_filtered.add(j)
+
+        unique_paths = []
+        lens = []
+        for i in range(n_paths):
+            if i in to_be_filtered: continue
+
+            unique_paths.append(paths[i])
+            lens.append(path_lens[i])
+
+        print_str = (
+            'graph.Graph.filter_unique_paths >> '
+            f'Removed {n_paths - len(unique_paths)} path duplicates.'
+        )
+        print(print_str)
+
+        return unique_paths, lens
+
+    def remove_subpaths(self, paths, path_lens):
+        to_be_filtered = set()
+
+        n_paths = len(paths)
+        for i in range(n_paths):
+            path = paths[i]
+            path_ctgs = self.filter_contigs(path)
+
+            for j in range(i + 1, n_paths):
+                other_path = paths[j]
+                other_path_ctgs = self.filter_contigs(other_path)
+
+                if len(path_ctgs) == len(other_path_ctgs): continue
+
+                path_ctgs_sublist_of_other_path_ctgs = Graph.is_sublist(
+                    path_ctgs,
+                    other_path_ctgs
+                )
+                other_path_ctgs_sublist_of_path_ctgs = Graph.is_sublist(
+                    other_path_ctgs,
+                    path_ctgs
+                )
+
+                if path_ctgs_sublist_of_other_path_ctgs:
+                    to_be_filtered.add(i)
+                elif other_path_ctgs_sublist_of_path_ctgs:
+                    to_be_filtered.add(j)
+
+        unique_paths = []
+        lens = []
+        for i in range(n_paths):
+            if i in to_be_filtered: continue
+
+            unique_paths.append(paths[i])
+            lens.append(path_lens[i])
+
+        print_str = (
+            'graph.Graph.remove_subpaths >> '
+            f'Removed {n_paths - len(unique_paths)} subpaths.'
+        )
+        print(print_str)
+
+        return unique_paths, lens
+
+    def filter_contigs(self, path):
+        contigs = set(self.contigs.values())
+        return list(filter(lambda n: n in contigs, path))
+
+    @staticmethod
+    def is_sublist(ls1, ls2):
+        if len(ls1) > len(ls2): return False
+
+        for i in range(len(ls2)):
+            if ls1[0] != ls2[i]: continue
+
+            j = 1
+            while j < len(ls1) and i+j < len(ls2) and ls1[j] == ls2[i+j]:
+                j += 1
+
+            if j == len(ls1): return True
+
+        return False
 
     @staticmethod
     def generate_groups(paths, path_lens):
@@ -380,6 +515,8 @@ class Graph:
                 ol = path[i].overlap_for_node(path[i+1])
                 ol_score += Graph.overlap_score(ol)
 
+            ol_score /= len(path) - 1
+
             if ol_score > max_ol_score:
                 max_ol_score = ol_score
                 best_path = path
@@ -403,7 +540,7 @@ class Graph:
     @staticmethod
     def load_sequences(path, nodes, used_nodes):
         with open(path) as handle:
-            for record in SeqIO.parse(handle, 'fasta'):
+            for record in SeqIO.parse(handle, Graph.determine_type(path)):
                 if record.id in used_nodes:
                     nodes[record.id].seq = record.seq
                     continue
@@ -411,6 +548,10 @@ class Graph:
                 compl_id = Node.complement_id(record.id)
                 if compl_id in used_nodes:
                     nodes[compl_id].seq = Node.complement_sequence(record.seq)
+
+    @staticmethod
+    def determine_type(path):
+        return 'fastq' if path.endswith('.fastq') else 'fasta'
 
     @staticmethod
     def sequence_identity(ol: pafpy.PafRecord):
