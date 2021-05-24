@@ -105,6 +105,10 @@ class Graph:
         return paths, path_lens
 
     def generate_sequence(self, paths, path_lens, contigs, reads, out):
+        if len(paths) == 0:
+            print('graph.Graph.generate_sequence >> No paths found. Exiting.')
+            return
+
         paths, path_lens = self.filter_unique_paths(paths, path_lens)
         paths, path_lens = self.remove_subpaths(paths, path_lens)
 
