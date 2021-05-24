@@ -9,7 +9,7 @@ SEQ_ID_MIN = 0.9
 LEN_DELTA = 100_000
 NUM_ELEMENTS = 2
 DELTA_TRIALS = 300
-MAX_BETWEEN_LEN = 250_000
+MAX_GAP_LEN = 250_000
 MIN_LEN = 10_000
 
 
@@ -18,6 +18,15 @@ class SortHelper:
     def __init__(self, node, score):
         self.node = node
         self.score = score
+
+
+class SearchState:
+
+    def __init__(self, nodes, path, path_len, gap_len):
+        self.nodes = nodes
+        self.path = path
+        self.path_len = path_len
+        self.gap_len = gap_len
 
 
 class Graph:
@@ -96,6 +105,10 @@ class Graph:
         return paths, path_lens
 
     def generate_sequence(self, paths, path_lens, contigs, reads, out):
+        if len(paths) == 0:
+            print('graph.Graph.generate_sequence >> No paths found. Exiting.')
+            return
+
         paths, path_lens = self.filter_unique_paths(paths, path_lens)
         paths, path_lens = self.remove_subpaths(paths, path_lens)
 
@@ -230,23 +243,27 @@ class Graph:
         cpt_path = None
         cpt_path_len = 0
 
-        open_nodes = [[start_node]]
-        open_paths = [copy.copy(start_path)]
-        start_path_len = 0 if len(start_path) == 0 else start_path[0].len
-        open_path_lens = [start_path_len]
-        open_between_lens = [0]
+        start_state = SearchState(
+            [start_node],
+            copy.copy(start_path),
+            0 if len(start_path) == 0 else start_path[0].len,
+            0
+        )
+        open = [start_state]
 
         contigs = set(self.contigs.values())
         visited = set()
         if len(start_path) != 0:
             visited.add(start_path[0])
 
-        while len(open_nodes) != 0:
+        while len(open) != 0:
 
-            node = open_nodes[0].pop(0)
-            active_path = open_paths[0]
+            state = open[-1]
 
-            between_len = open_between_lens[0]
+            node = state.nodes.pop()
+            active_path = state.path
+            gap_len = state.gap_len
+
             is_read = node not in contigs
             if len(active_path) == 0:
                 ext_len = node.len
@@ -256,15 +273,15 @@ class Graph:
                 ext_len = -(prev_node.len-ol.qstart) + (node.len-ol.tstart)
 
                 if is_read:
-                    between_len += node.len - ol.tend
+                    gap_len += node.len - ol.tend
 
-            path_len = open_path_lens[0] + ext_len
+                    if len(active_path) > 1:
+                        gap_len -= (prev_node.len-ol.qend)
 
-            if len(open_nodes[0]) == 0:
-                open_nodes.pop(0)
-                open_paths.pop(0)
-                open_path_lens.pop(0)
-                open_between_lens.pop(0)
+            path_len = state.path_len + ext_len
+
+            if len(state.nodes) == 0:
+                open.pop()
 
             if node in visited:
                 continue
@@ -274,7 +291,7 @@ class Graph:
             node_compl = self.get_node_complement(node)
             if node in active_path or node_compl in active_path: continue
 
-            if len(node.nodes) == 0 or between_len > MAX_BETWEEN_LEN:
+            if len(node.nodes) == 0 or gap_len > MAX_GAP_LEN:
                 continue
 
             connected_contig = set(node.nodes).intersection(contigs)
@@ -293,16 +310,9 @@ class Graph:
                 ext_len = -(node.len-ol.qstart) + (contig.len-ol.tstart)
                 cpt_path_len = path_len + ext_len
 
-                open_nodes.clear()
-                open_paths.clear()
-                open_path_lens.clear()
-                open_between_lens.clear()
-                visited.clear()
+                open.clear()
 
-                open_nodes.insert(0, [contig])
-                open_paths.insert(0, tmp_path)
-                open_path_lens.insert(0, path_len)
-                open_between_lens.insert(0, 0)
+                open.append(SearchState([contig], tmp_path, path_len, 0))
 
                 continue
 
@@ -312,10 +322,7 @@ class Graph:
             path = copy.copy(active_path)
             path.append(node)
 
-            open_nodes.insert(0, next_nodes)
-            open_paths.insert(0, path)
-            open_path_lens.insert(0, path_len)
-            open_between_lens.insert(0, between_len)
+            open.append(SearchState(next_nodes[::-1], path, path_len, gap_len))
 
         return cpt_path, cpt_path_len
 
