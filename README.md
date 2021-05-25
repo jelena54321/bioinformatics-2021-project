@@ -21,24 +21,24 @@ cd bioinformatics-2021-project
 
 Run program:
 ```
-    python3 ./src/main.py <contigs> <reads> <reads_to_contigs> <reads_to_reads> <out>
+python3 ./src/main.py <contigs> <reads> <reads_to_contigs> <reads_to_reads> <out>
 
-        <contigs>
-            Contigs in FASTA/FASTQ format
-        <reads>
-            Reads in FASTA/FASTQ format
-        <reads_to_contigs>
-            <reads> aligned to <contigs> in PAF format
-        <reads_to_reads>
-            <reads> aligned to <reads> in PAF format
-        <out>
-            Output file in FASTA format.
+    <contigs>
+        contigs in FASTA/FASTQ format
+    <reads>
+        reads in FASTA/FASTQ format
+    <reads_to_contigs>
+        <reads> aligned to <contigs> in PAF format
+    <reads_to_reads>
+        <reads> aligned to <reads> in PAF format
+    <out>
+        output file in FASTA format
 ```
 
 ## Testing
 
 ## Clean
-Clean all data and delete virtual environment:
+Clean virtual environment data:
 ```bash
 make clean
 ```
