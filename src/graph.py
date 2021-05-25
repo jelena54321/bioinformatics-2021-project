@@ -1,5 +1,6 @@
 from Bio import SeqIO, Seq, SeqRecord
-from node import Node, Overlap
+from graph_models import Node, Overlap
+from search_models import SortHelper, SearchState, TestData
 import pafpy
 import random
 import copy
@@ -11,22 +12,6 @@ NUM_ELEMENTS = 2
 DELTA_TRIALS = 300
 MAX_GAP_LEN = 250_000
 MIN_LEN = 10_000
-
-
-class SortHelper:
-
-    def __init__(self, node, score):
-        self.node = node
-        self.score = score
-
-
-class SearchState:
-
-    def __init__(self, nodes, path, path_len, gap_len):
-        self.nodes = nodes
-        self.path = path
-        self.path_len = path_len
-        self.gap_len = gap_len
 
 
 class Graph:
@@ -133,6 +118,8 @@ class Graph:
             'Written generated sequence in the output file.'
         )
         print(print_str)
+
+        return self.prepare_test_data(best_path)
 
     @staticmethod
     def process_overlaps(path, queries, targets, should_add_overlap):
@@ -311,7 +298,6 @@ class Graph:
                 cpt_path_len = path_len + ext_len
 
                 open.clear()
-
                 open.append(SearchState([contig], tmp_path, path_len, 0))
 
                 continue
@@ -559,6 +545,11 @@ class Graph:
     @staticmethod
     def determine_type(path):
         return 'fastq' if path.endswith('.fastq') else 'fasta'
+
+    def prepare_test_data(self, path):
+        contigs = self.filter_contigs(path)
+        longest_contig = max(contigs, key=lambda c: c.len)
+        return TestData(len(contigs), longest_contig.len)
 
     @staticmethod
     def sequence_identity(ol: pafpy.PafRecord):

@@ -3,10 +3,8 @@ class Overlap:
     def __init__(self, qstart, qend, tstart, tend, seq_id):
         self.qstart = qstart
         self.qend = qend
-
         self.tstart = tstart
         self.tend = tend
-
         self.seq_id = seq_id
 
 
