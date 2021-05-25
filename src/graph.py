@@ -33,7 +33,7 @@ class Graph:
             Graph.should_add_overlap
         )
         print_str = (
-            'graph.Graph.construct >> '
+            '\ngraph.Graph.construct >> '
             'Added overlaps between contigs and reads.'
         )
         print(print_str)
