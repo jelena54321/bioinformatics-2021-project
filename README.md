@@ -35,10 +35,9 @@ python3 ./src/main.py <contigs> <reads> <reads_to_contigs> <reads_to_reads> <out
         output file in FASTA format
 ```
 
-## Testing
-
 ## Clean
 Clean virtual environment data:
 ```bash
+cd bioinformatics-2021-project
 make clean
 ```
