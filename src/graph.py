@@ -1,9 +1,9 @@
-from Bio import SeqIO, Seq, SeqRecord
-from graph_models import Node, Overlap
-from search_models import SortHelper, SearchState, TestData
-import pafpy
 import random
 import copy
+import pafpy
+from Bio import SeqIO, SeqRecord
+from graph_models import Node, Overlap
+from search_models import SortHelper, SearchState, TestData
 
 
 SEQ_ID_MIN = 0.9
@@ -15,6 +15,11 @@ MIN_LEN = 10_000
 
 
 class Graph:
+    '''Class that represents an overlap graph.
+
+    :param contigs: Contig nodes
+    :param reads: Read nodes
+    '''
 
     COMPARATOR_BY_SCORE_AND_LENGTH = lambda el: (el.score, el.node.len)
     OVERLAP_SCORE = lambda *args: Graph.overlap_score(args[0])
@@ -25,6 +30,13 @@ class Graph:
 
     @staticmethod
     def construct(reads_to_contigs, reads_to_reads):
+        '''Builds a graph based on provided PAF align files.
+
+        :param reads_to_contigs: PAF file with reads aligned to contigs
+        :param reads_to_reads: PAF file with reads aligned to other reads
+        :returns: New Graph instance
+        '''
+
         contigs = dict()
         reads = dict()
 
@@ -47,6 +59,22 @@ class Graph:
         return Graph(contigs, reads)
 
     def generate_paths(self):
+        '''Generates node paths as a result of a depth first search.
+
+        All contigs are used as path starting points. In order to avoid
+        traversing through whole graph, this method uses three different
+        heuristics:
+        (1) Expanding current node with overlapping node that has the
+        highest overlap score
+        (2) Expanding current node with overlapping node that has the
+        highest extension score
+        (3) Expanding current node with randomly chosen overlapping node.
+        The probability of a connecting node being selcted is proportional
+        to its extension score.
+
+        :returns: List of found paths and their corresponding lengths
+        '''
+
         paths = []
         path_lens = []
 
@@ -90,9 +118,24 @@ class Graph:
         return paths, path_lens
 
     def generate_sequence(self, paths, path_lens, contigs, reads, out):
+        '''Generates final sequence based on the list of found paths.
+
+        Method filters only unique paths and discards subpaths. Remaining
+        paths are grouped based on their lengths. From the biggest group
+        the path with the highest overlap score is chosen as a final path.
+        Using data from the provided files, result sequence is built and
+        written to the output file.
+
+        :param paths: List of found paths
+        :param path_lens: List of corresponding path lengths
+        :param contigs: FASTA/FASTQ file with contig data
+        :param reads: FASTA/FASTQ file with reads data
+        :param out: FASTA file where final sequence will be written
+        '''
+
         if len(paths) == 0:
-            print('graph.Graph.generate_sequence >> No paths found. Exiting.')
-            return
+            print('graph.Graph.generate_sequence >> No paths. Exiting.')
+            return None
 
         paths, path_lens = self.filter_unique_paths(paths, path_lens)
         paths, path_lens = self.remove_subpaths(paths, path_lens)
@@ -123,6 +166,21 @@ class Graph:
 
     @staticmethod
     def process_overlaps(path, queries, targets, should_add_overlap):
+        '''Processes PAF align files to build a graph.
+
+        Method builds overlaps between two reads or reads and contigs
+        based on the data found in the PAF file.
+
+        Unmapped aligns, aligns with sequence identity smaller than the
+        threshold value and aligns with reads that are contained in
+        other sequences are discarded.
+
+        :param path: PAF file with align records
+        :param queries: Dictionary where record queries will be saved
+        :param targets: Dictionary where record targets will be saved
+        :param should_add_overlap: Function that determines whether
+        overlap will be added to graph
+        '''
 
         with pafpy.PafFile(path) as paf:
             for ol in paf:
@@ -223,10 +281,30 @@ class Graph:
                         compl_q.add_overlap(t, overlap)
 
     def get_node_complement(self, node):
+        '''Gets node complement in a graph.
+
+        :param node: Node
+        :returns: Node complement
+        '''
+
         nodes = self.reads if node.id in self.reads else self.contigs
         return nodes[Node.complement_id(node.id)]
 
     def dfs(self, start_node, start_path, scores_fn, next_fn):
+        '''Runs depth first search through the graph.
+
+        Search does not allow paths where distance between two contigs
+        is bigger than the threshold value. When method encounters
+        a contig, search continues as though said contig is the starting
+        point.
+
+        :param start_node: Node that will be visited first
+        :param start_path: Initial path
+        :param scores_fn: Function for determining overlap scores
+        :param next_fn: Function for determining node successors
+        :returns: Found node path
+        '''
+
         cpt_path = None
         cpt_path_len = 0
 
@@ -270,10 +348,9 @@ class Graph:
             if len(state.nodes) == 0:
                 open.pop()
 
-            if node in visited:
-                continue
-            else:
-                visited.add(node)
+            if node in visited: continue
+
+            visited.add(node)
 
             node_compl = self.get_node_complement(node)
             if node in active_path or node_compl in active_path: continue
@@ -313,6 +390,15 @@ class Graph:
         return cpt_path, cpt_path_len
 
     def next_nodes(self, node, path, scores_fn, next_fn):
+        '''Gets children nodes based on the scores_fn and next_fn.
+
+        :param node: Node that will be expanded
+        :param path: Active node path
+        :param scores_fn: Function for determining node scores
+        :param next_fn: Function for determining next nodes
+        :returns: Next nodes to be visited
+        '''
+
         scores = []
         for i in range(len(node.nodes)):
             next_node = node.nodes[i]
@@ -324,6 +410,13 @@ class Graph:
         return next_fn(scores, path)
 
     def next_using_the_best_score(self, scores, path):
+        '''Gets at most NUM_ELEMENTS elements with the best score.
+
+        :param scores: List of SortHelper instances
+        :param path: Active node path
+        :return: Next nodes to be visited using the best score
+        '''
+
         scores = sorted(
             scores,
             key=Graph.COMPARATOR_BY_SCORE_AND_LENGTH,
@@ -341,6 +434,16 @@ class Graph:
         return next
 
     def next_using_monte_carlo(self, scores, path):
+        '''Gets next node using Monte Carlo method.
+
+        Method randomly chooses next node. The probability of a node
+        being chosen is proportional to the node extension score.
+
+        :param scores: List of SortHelper instances
+        :param path: Active node path
+        :returns: Next node to be visited using Monte Carlo
+        '''
+
         next = []
         nodes = []
         weights = []
@@ -358,6 +461,13 @@ class Graph:
         return next
 
     def filter_unique_paths(self, paths, path_lens):
+        '''Filters unique paths.
+
+        :param paths: List of paths
+        :param path_lens: List of corresponding path lengths
+        :returns: Unique paths
+        '''
+
         to_be_filtered = set()
 
         n_paths = len(paths)
@@ -411,6 +521,16 @@ class Graph:
         return unique_paths, lens
 
     def remove_subpaths(self, paths, path_lens):
+        '''Removes subpaths.
+
+        Subpaths are all paths that contain contigs that are found in
+        other paths. Order of contigs is taken into account.
+
+        :param paths: List of paths
+        :param path_lens: List of corresponding path lengths
+        :returns: Paths without subpaths
+        '''
+
         to_be_filtered = set()
 
         n_paths = len(paths)
@@ -455,11 +575,24 @@ class Graph:
         return unique_paths, lens
 
     def filter_contigs(self, path):
+        '''Returns list of contigs found in the provided path.
+
+        :param path: Path
+        :returns: List of contigs included in the path
+        '''
+
         contigs = set(self.contigs.values())
         return list(filter(lambda n: n in contigs, path))
 
     @staticmethod
     def is_sublist(ls1, ls2):
+        '''Determines whether one is sublist of another.
+
+        :param ls1: First list
+        :param ls2: Second list
+        :returns: True if ls1 is sublist of ls2
+        '''
+
         if len(ls1) > len(ls2): return False
 
         for i in range(len(ls2)):
@@ -475,6 +608,17 @@ class Graph:
 
     @staticmethod
     def generate_groups(paths, path_lens):
+        '''Groups paths into groups.
+
+        Paths with simmilar lengths are grouped into the same group.
+        If all path lengths are smaller than MIN_LEN, then all paths
+        are put in the same group.
+
+        :param path: Paths list
+        :param path_lens: Path lengths list
+        :returns: Grouped paths
+        '''
+
         if all(path_len < MIN_LEN for path_len in path_lens):
             return [paths]
 
@@ -500,6 +644,16 @@ class Graph:
 
     @staticmethod
     def best_path(group):
+        '''Returns best path according to the highest overlap score
+
+        In order to prevent paths being chosen only based on their
+        lengths, total overlap score for a path is devided by the
+        number of present overlaps.
+
+        :param group: Group of paths
+        :returns: Path with the highest average overlap score
+        '''
+
         max_ol_score = -1
         best_path = None
         for path in group:
@@ -518,6 +672,12 @@ class Graph:
 
     @staticmethod
     def build_sequence(path):
+        '''Builds a sequence of a path.
+
+        :param path: Path
+        :returns: Sequence built according to provided path
+        '''
+
         seq = ''
         start = 0
         for i in range(len(path) - 1):
@@ -532,6 +692,13 @@ class Graph:
 
     @staticmethod
     def load_sequences(path, nodes, used_nodes):
+        '''Loads used sequences into graph nodes.
+
+        :param path: FASTA/FASTQ file with sequences
+        :param nodes: Graph nodes
+        :param used_nodes: List of used nodes
+        '''
+
         with open(path) as handle:
             for record in SeqIO.parse(handle, Graph.determine_type(path)):
                 if record.id in used_nodes:
@@ -544,24 +711,57 @@ class Graph:
 
     @staticmethod
     def determine_type(path):
+        '''Determines file type.
+
+        Method expects that provided file ends either with 'fasta'
+        or 'fastq' extension.
+
+        :param path: File
+        :returns: File type according to file extension
+        '''
+
         return 'fastq' if path.endswith('.fastq') else 'fasta'
 
     def prepare_test_data(self, path):
+        '''Prepares test data according to final path.
+
+        :param path: Path
+        :returns: Corresponding TestData instance
+        '''
+
         contigs = self.filter_contigs(path)
         longest_contig = max(contigs, key=lambda c: c.len)
         return TestData(len(contigs), longest_contig.len)
 
     @staticmethod
     def sequence_identity(ol: pafpy.PafRecord):
+        '''Calculates sequence identity.
+
+        :param ol: Overlap record
+        :returns: Sequence identity of an overlap
+        '''
+
         return ol.mlen / ol.blen
 
     @staticmethod
     def average_overlap_length(ol):
+        '''Calculates average overlap length.
+
+        :param ol: Overlap record
+        :returns: Average overlap length
+        '''
+
         return (ol.qend-ol.qstart+ol.tend-ol.tstart) / 2
 
     @staticmethod
     def overlap_score(ol):
-        if type(ol) is pafpy.PafRecord:
+        '''Calculates overlap score.
+
+        :param ol: Overlap record
+        :returns: Overlap score
+        '''
+
+        if isinstance(ol, pafpy.PafRecord):
             seq_id = Graph.sequence_identity(ol)
         else:
             seq_id = ol.seq_id
@@ -569,6 +769,14 @@ class Graph:
 
     @staticmethod
     def extension_score(ol: Overlap, q, t):
+        '''Calculates extension score.
+
+        :param ol: Overlap record
+        :param q: Extended sequence
+        :param t: Extending sequence
+        :returns: Extension score
+        '''
+
         ol_score = Graph.overlap_score(ol)
         oh_1 = len(q) - ol.qend
         oh_2 = ol.tstart
@@ -577,6 +785,16 @@ class Graph:
 
     @staticmethod
     def should_add_overlap(ol, read, compl_read, contigs, reads):
+        '''Determines whether provided overlap should be added to graph.
+
+        :param ol: Overlap record
+        :param read: Read that is included in overlap
+        :param compl_read: Complemented read
+        :param contigs: Contigs
+        :param reads: Reads
+        :returns: True if overlap should be added to graph.
+        '''
+
         if len(read.nodes) == 0 and len(compl_read.nodes) == 0: return True
 
         r = read if len(read.nodes) > 0 else compl_read
