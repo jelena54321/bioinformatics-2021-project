@@ -28,7 +28,8 @@ def main():
         args.contigs, args.reads, args.out
     )
 
-    print(prepare_test_data_string(test_data))
+    if test_data is not None:
+        print(prepare_test_data_string(test_data))
 
 
 if __name__ == '__main__':

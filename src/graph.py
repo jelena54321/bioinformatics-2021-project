@@ -792,7 +792,7 @@ class Graph:
         :param compl_read: Complemented read
         :param contigs: Contigs
         :param reads: Reads
-        :returns: True if overlap should be added to graph.
+        :returns: True if overlap should be added to graph
         '''
 
         if len(read.nodes) == 0 and len(compl_read.nodes) == 0: return True
