@@ -1,4 +1,5 @@
 import argparse
+import time
 import sys
 sys.path.append('../src')
 from graph import Graph
@@ -21,12 +22,16 @@ def main():
     parser.add_argument('out', type=str)
     args = parser.parse_args()
 
+    start_time = time.time()
+
     graph = Graph.construct(args.reads_to_contigs, args.reads_to_reads)
     paths, path_lens = graph.generate_paths()
     test_data = graph.generate_sequence(
         paths, path_lens,
         args.contigs, args.reads, args.out
     )
+
+    print(f'\nRunning time: {(time.time() - start_time):.5f}s')
 
     if test_data is not None:
         print(prepare_test_data_string(test_data))
